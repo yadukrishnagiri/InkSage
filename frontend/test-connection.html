@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InkSage Connection Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2d3748;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #4a5568;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .success {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #10b981;
+        }
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #ef4444;
+        }
+        .info {
+            background: #dbeafe;
+            color: #1e40af;
+            border: 1px solid #3b82f6;
+        }
+        .loading {
+            color: #6b7280;
+        }
+        input {
+            width: 100%;
+            padding: 8px;
+            margin: 10px 0;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        label {
+            display: block;
+            margin-top: 10px;
+            font-weight: 500;
+            color: #374151;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔌 InkSage Connection Test</h1>
+    
+    <div class="test-section">
+        <h2>1. Environment Variables</h2>
+        <label>API URL:</label>
+        <input type="text" id="apiUrl" value="http://localhost:8000" placeholder="http://localhost:8000">
+        
+        <label>Supabase URL:</label>
+        <input type="text" id="supabaseUrl" placeholder="https://xxxxx.supabase.co">
+        
+        <label>Supabase Anon Key:</label>
+        <input type="text" id="supabaseKey" placeholder="eyJ...">
+        
+        <button onclick="checkEnv()">Check Environment</button>
+        <div id="envResult"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>2. Backend API Connection</h2>
+        <button onclick="testHealth()">Test Health Endpoint</button>
+        <button onclick="testRoot()">Test Root Endpoint</button>
+        <button onclick="testGuestSession()">Test Guest Session</button>
+        <div id="apiResult"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>3. Supabase Connection</h2>
+        <button onclick="testSupabase()">Test Supabase Client</button>
+        <div id="supabaseResult"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>4. Full Integration Test</h2>
+        <button onclick="testFullIntegration()">Run Full Test</button>
+        <div id="integrationResult"></div>
+    </div>
+
+    <script type="module">
+        const API_URL = document.getElementById('apiUrl').value;
+        let guestSessionId = null;
+        
+        function showResult(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="result ${type}">${message}</div>`;
+        }
+        
+        async function checkEnv() {
+            const apiUrl = document.getElementById('apiUrl').value;
+            const supabaseUrl = document.getElementById('supabaseUrl').value;
+            const supabaseKey = document.getElementById('supabaseKey').value;
+            
+            let message = 'Environment Variables:\n\n';
+            message += `API URL: ${apiUrl || '❌ Not set'}\n`;
+            message += `Supabase URL: ${supabaseUrl || '❌ Not set'}\n`;
+            message += `Supabase Key: ${supabaseKey ? supabaseKey.substring(0, 20) + '...' : '❌ Not set'}\n\n`;
+            
+            if (apiUrl && supabaseUrl && supabaseKey) {
+                message += '✅ All environment variables are set!';
+                showResult('envResult', message, 'success');
+            } else {
+                message += '⚠️ Some environment variables are missing.';
+                message += '\n\nSet them in your .env.local file or use the inputs above.';
+                showResult('envResult', message, 'error');
+            }
+        }
+        
+        async function testHealth() {
+            const apiUrl = document.getElementById('apiUrl').value;
+            showResult('apiResult', 'Testing health endpoint...', 'loading');
+            
+            try {
+                const response = await fetch(`${apiUrl}/health`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult('apiResult', `✅ Health check passed!\n\nResponse: ${JSON.stringify(data, null, 2)}`, 'success');
+                } else {
+                    showResult('apiResult', `❌ Health check failed: ${response.status}\n\n${JSON.stringify(data, null, 2)}`, 'error');
+                }
+            } catch (error) {
+                showResult('apiResult', `❌ Connection error: ${error.message}\n\nMake sure the backend is running: python run.py`, 'error');
+            }
+        }
+        
+        async function testRoot() {
+            const apiUrl = document.getElementById('apiUrl').value;
+            showResult('apiResult', 'Testing root endpoint...', 'loading');
+            
+            try {
+                const response = await fetch(`${apiUrl}/`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResult('apiResult', `✅ Root endpoint accessible!\n\nResponse: ${JSON.stringify(data, null, 2)}`, 'success');
+                } else {
+                    showResult('apiResult', `⚠️ Root endpoint returned: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                showResult('apiResult', `❌ Error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testGuestSession() {
+            const apiUrl = document.getElementById('apiUrl').value;
+            showResult('apiResult', 'Creating guest session...', 'loading');
+            
+            try {
+                const response = await fetch(`${apiUrl}/api/guest/session`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    guestSessionId = data.session_id;
+                    showResult('apiResult', `✅ Guest session created!\n\nSession ID: ${data.session_id}\nExpires: ${data.expires_at}`, 'success');
+                } else {
+                    showResult('apiResult', `❌ Failed: ${response.status}\n\n${JSON.stringify(data, null, 2)}`, 'error');
+                }
+            } catch (error) {
+                showResult('apiResult', `❌ Error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testSupabase() {
+            const supabaseUrl = document.getElementById('supabaseUrl').value;
+            const supabaseKey = document.getElementById('supabaseKey').value;
+            
+            if (!supabaseUrl || !supabaseKey) {
+                showResult('supabaseResult', '❌ Please set Supabase URL and Key first', 'error');
+                return;
+            }
+            
+            showResult('supabaseResult', 'Testing Supabase connection...', 'loading');
+            
+            try {
+                // Try to load Supabase from CDN
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+                document.head.appendChild(script);
+                
+                await new Promise((resolve, reject) => {
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    setTimeout(reject, 5000);
+                });
+                
+                const { createClient } = window.supabase;
+                const supabase = createClient(supabaseUrl, supabaseKey);
+                
+                // Test query
+                const { data, error } = await supabase.from('users').select('id').limit(1);
+                
+                if (error) {
+                    showResult('supabaseResult', `⚠️ Supabase connected but query failed:\n\n${error.message}`, 'error');
+                } else {
+                    showResult('supabaseResult', `✅ Supabase connection successful!\n\nQuery returned ${data.length} row(s)`, 'success');
+                }
+            } catch (error) {
+                showResult('supabaseResult', `❌ Error: ${error.message}\n\nMake sure Supabase URL and Key are correct.`, 'error');
+            }
+        }
+        
+        async function testFullIntegration() {
+            showResult('integrationResult', 'Running full integration test...\n\n', 'loading');
+            let results = [];
+            
+            // Test 1: Health
+            try {
+                const apiUrl = document.getElementById('apiUrl').value;
+                const healthRes = await fetch(`${apiUrl}/health`);
+                if (healthRes.ok) {
+                    results.push('✅ Backend health check passed');
+                } else {
+                    results.push('❌ Backend health check failed');
+                }
+            } catch (e) {
+                results.push('❌ Backend not reachable');
+            }
+            
+            // Test 2: Guest Session
+            try {
+                const apiUrl = document.getElementById('apiUrl').value;
+                const sessionRes = await fetch(`${apiUrl}/api/guest/session`, { method: 'POST' });
+                if (sessionRes.ok) {
+                    const data = await sessionRes.json();
+                    guestSessionId = data.session_id;
+                    results.push('✅ Guest session created');
+                } else {
+                    results.push('❌ Guest session creation failed');
+                }
+            } catch (e) {
+                results.push('❌ Guest session error');
+            }
+            
+            // Test 3: Supabase
+            const supabaseUrl = document.getElementById('supabaseUrl').value;
+            const supabaseKey = document.getElementById('supabaseKey').value;
+            if (supabaseUrl && supabaseKey) {
+                results.push('✅ Supabase credentials provided');
+            } else {
+                results.push('⚠️ Supabase credentials missing');
+            }
+            
+            showResult('integrationResult', results.join('\n'), results.every(r => r.startsWith('✅')) ? 'success' : 'info');
+        }
+        
+        // Make functions global
+        window.checkEnv = checkEnv;
+        window.testHealth = testHealth;
+        window.testRoot = testRoot;
+        window.testGuestSession = testGuestSession;
+        window.testSupabase = testSupabase;
+        window.testFullIntegration = testFullIntegration;
+        
+        // Auto-check env on load
+        setTimeout(checkEnv, 500);
+    </script>
+</body>
+</html>
+

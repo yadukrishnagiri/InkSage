@@ -1,0 +1,139 @@
+# Environment Variables
+.env
+.env.local
+.env.*.local
+*.env
+backend/.env
+frontend/.env.local
+frontend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+ENV/
+env/
+.venv
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-debug.log*
+.npm
+.eslintcache
+.node_repl_history
+*.tgz
+.yarn-integrity
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# ChromaDB
+chroma_db/
+backend/chroma_db/
+*.sqlite3
+*.db
+
+# Uploads
+uploads/
+backend/uploads/
+*.pdf
+*.docx
+*.pptx
+*.xlsx
+*.xls
+*.csv
+!database/migrations/*.sql
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Testing
+.coverage
+.pytest_cache/
+.tox/
+.hypothesis/
+htmlcov/
+*.cover
+*.py,cover
+.cache
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+.next/
+out/
+.nuxt/
+.cache/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+.expamle.txt
+expamle.txt
+backend/expamle.txt
+backend/expamle .txt
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Test files (keep test scripts, ignore results)
+TEST_RESULTS.md
+backend/TEST_RESULTS.md
+test_results/
+*.test
+
+# Documentation (user can choose to commit or not)
+# Uncomment if you don't want to track these:
+# *.md
+# !README.md
+

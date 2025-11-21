@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>InkSage - Private AI Study Workspace</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=DM+Sans:opsz,wght@9..40,400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;600&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              paper: '#fdfbf7',
+              'paper-dark': '#f5f2eb',
+              ink: '#2d3748',
+              'ink-light': '#4a5568',
+              highlighter: '#fef08a',
+              'highlighter-green': '#bbf7d0',
+              accent: '#3b82f6',
+            },
+            fontFamily: {
+              sans: ['"DM Sans"', 'sans-serif'],
+              serif: ['"Source Serif 4"', 'serif'],
+              hand: ['"Caveat"', 'cursive'],
+            },
+            backgroundImage: {
+              'grid-paper': "radial-gradient(#cbd5e1 1px, transparent 1px)",
+              'ruled-paper': "linear-gradient(#e2e8f0 1px, transparent 1px)",
+            },
+            backgroundSize: {
+              'grid-paper': '20px 20px',
+              'ruled-paper': '100% 24px',
+            },
+            boxShadow: {
+              'paper': '2px 4px 12px rgba(0, 0, 0, 0.08)',
+              'lifted': '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            },
+            animation: {
+              'float-slow': 'float 6s ease-in-out infinite',
+              'float-medium': 'float 5s ease-in-out infinite',
+              'float-fast': 'float 4s ease-in-out infinite',
+              'float-delayed': 'float 6s ease-in-out 3s infinite',
+              'scan': 'scan 3s linear infinite',
+            },
+            keyframes: {
+              float: {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-15px)' },
+              },
+              scan: {
+                '0%': { top: '-20%', opacity: '0' },
+                '10%': { opacity: '1' },
+                '90%': { opacity: '1' },
+                '100%': { top: '120%', opacity: '0' },
+              }
+            }
+          },
+        },
+      }
+    </script>
+    <style>
+      body {
+        background-color: #f3f4f6;
+        color: #2d3748;
+      }
+      .hide-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .hide-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      .preserve-3d {
+        transform-style: preserve-3d;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
+</html>
