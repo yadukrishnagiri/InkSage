@@ -1,9 +1,10 @@
-from typing import List, Dict
+from typing import List, Dict, Iterator
 from rank_bm25 import BM25Okapi
 import numpy as np
 from app.services.embedding_service import EmbeddingService
 from app.services.chromadb_service import ChromaDBService
 from app.services.groq_service import GroqService
+import json
 
 class RAGService:
     def __init__(
@@ -126,8 +127,8 @@ class RAGService:
         Returns:
             Dictionary with response text and citations
         """
-        # Hybrid search
-        relevant_chunks = self.hybrid_search(subject_id, query, top_k=10)
+        # Hybrid search - reduced top_k from 10 to 7 for faster processing
+        relevant_chunks = self.hybrid_search(subject_id, query, top_k=7)
         
         print(f"RAG Query - Subject: {subject_id}, Query: {query}, Found chunks: {len(relevant_chunks)}")
         
@@ -170,4 +171,96 @@ class RAGService:
             "text": response_text,
             "citations": citations
         }
+    
+    def query_stream(
+        self,
+        subject_id: str,
+        query: str,
+        chat_history: List[Dict] = None
+    ) -> Iterator[str]:
+        """
+        Perform streaming RAG query: retrieve relevant chunks and stream response.
+        
+        Args:
+            subject_id: Subject ID
+            query: User query
+            chat_history: Previous chat messages
+            
+        Yields:
+            JSON strings with text chunks and metadata
+        """
+        # Hybrid search - reduced top_k from 10 to 7 for faster processing
+        relevant_chunks = self.hybrid_search(subject_id, query, top_k=7)
+        
+        print(f"RAG Query Stream - Subject: {subject_id}, Query: {query}, Found chunks: {len(relevant_chunks)}")
+        
+        if not relevant_chunks:
+            # Check if collection exists and has any data
+            try:
+                collection = self.chromadb_service.get_collection(subject_id)
+                count = collection.count()
+                print(f"Collection has {count} chunks total")
+                if count == 0:
+                    yield json.dumps({
+                        "type": "error",
+                        "text": "I don't see any files uploaded yet. Please upload your notes first.",
+                        "citations": []
+                    })
+                    return
+            except Exception as e:
+                print(f"Error checking collection: {e}")
+            
+            yield json.dumps({
+                "type": "error",
+                "text": "I couldn't find relevant information in your uploaded notes for this query. Try rephrasing your question or uploading more related files.",
+                "citations": []
+            })
+            return
+        
+        # Extract citations from chunks
+        citations = []
+        seen_files = set()
+        for chunk in relevant_chunks:
+            file_name = chunk.get("metadata", {}).get("file_name", "")
+            if file_name and file_name not in seen_files:
+                citations.append(file_name)
+                seen_files.add(file_name)
+        
+        # Send citations first
+        yield json.dumps({
+            "type": "citations",
+            "citations": citations
+        })
+        
+        # Stream response with Groq
+        try:
+            for chunk in self.groq_service.generate_response_stream(
+                query=query,
+                context_chunks=relevant_chunks,
+                chat_history=chat_history
+            ):
+                # Check if it's an error JSON
+                try:
+                    error_data = json.loads(chunk)
+                    if "error" in error_data:
+                        yield json.dumps({
+                            "type": "error",
+                            "text": error_data["error"],
+                            "citations": citations
+                        })
+                        return
+                except:
+                    pass
+                
+                # Send text chunk
+                yield json.dumps({
+                    "type": "chunk",
+                    "text": chunk
+                })
+        except Exception as e:
+            yield json.dumps({
+                "type": "error",
+                "text": f"Error generating response: {str(e)}",
+                "citations": citations
+            })
 

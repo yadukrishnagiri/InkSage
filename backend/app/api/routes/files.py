@@ -1,10 +1,10 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Header, Form
 from fastapi.responses import JSONResponse
-from typing import Optional
+from typing import Optional, List
 import os
 import uuid
 import hashlib
-from app.models.schemas import FileUpload, FileResponse, FileStatus
+from app.models.schemas import FileUpload, FileResponse, FileStatus, MultiFileResponse
 from app.services.file_processor import FileProcessor
 from app.services.chunking_service import ChunkingService
 from app.services.embedding_service import EmbeddingService
@@ -221,6 +221,201 @@ async def upload_file(
         status="processing",
         message=message,
         duplicate_info=duplicate_info
+    )
+
+@router.post("/upload-multiple", response_model=MultiFileResponse)
+async def upload_multiple_files(
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    subject_id: str = Form(...),
+    authorization: Optional[str] = Header(None),
+    guest_session_id: Optional[str] = Header(None, alias="X-Guest-Session-ID")
+):
+    """Upload and process multiple files at once."""
+    if not subject_id:
+        raise HTTPException(status_code=400, detail="subject_id is required")
+    
+    if not files or len(files) == 0:
+        raise HTTPException(status_code=400, detail="At least one file is required")
+    
+    # Get user info
+    from app.services.auth_service import AuthService
+    auth = AuthService()
+    user = auth.get_user_from_header(authorization)
+    user_id = user.get("user_id") if user else None
+    
+    # Ensure subject exists before uploading files
+    from app.services.supabase_service import SupabaseService
+    supabase = SupabaseService.get_instance()
+    try:
+        # Verify subject exists
+        subjects = supabase.get_subjects(user_id=user_id, guest_session_id=guest_session_id)
+        subject_exists = any(s.get("id") == subject_id for s in subjects)
+        if not subject_exists:
+            raise HTTPException(status_code=404, detail="Subject not found")
+    except Exception as e:
+        print(f"Error verifying subject: {e}")
+        # Continue anyway - might be a guest session
+    
+    file_responses: List[FileResponse] = []
+    successful = 0
+    failed = 0
+    
+    # Process each file
+    for file in files:
+        try:
+            # Validate file size (50MB limit per file)
+            max_file_size = 50 * 1024 * 1024
+            file_content = await file.read()
+            file_size = len(file_content)
+            
+            if file_size > max_file_size:
+                file_responses.append(FileResponse(
+                    file_id="",
+                    status="failed",
+                    message=f"File {file.filename} exceeds 50MB limit",
+                    duplicate_info=None
+                ))
+                failed += 1
+                continue
+            
+            # Check storage cap for logged users (500MB total)
+            storage_check = None
+            if user_id and not guest_session_id:
+                current_storage = supabase.get_storage_used(user_id)
+                storage_check = StorageService.check_storage_limit(
+                    current_storage=current_storage,
+                    new_file_size=file_size,
+                    user_id=user_id
+                )
+                
+                if not storage_check["allowed"]:
+                    file_responses.append(FileResponse(
+                        file_id="",
+                        status="failed",
+                        message=storage_check["message"],
+                        duplicate_info=None
+                    ))
+                    failed += 1
+                    continue
+            
+            # Validate file extension
+            file_extension = os.path.splitext(file.filename)[1].lower()
+            allowed_extensions = ['.pdf', '.docx', '.pptx', '.xlsx', '.xls', '.csv', '.txt', '.md']
+            if file_extension not in allowed_extensions:
+                file_responses.append(FileResponse(
+                    file_id="",
+                    status="failed",
+                    message=f"File type {file_extension} not supported",
+                    duplicate_info=None
+                ))
+                failed += 1
+                continue
+            
+            # Generate file ID
+            file_id = str(uuid.uuid4())
+            
+            # Determine storage path based on user type
+            if guest_session_id:
+                guest_path = os.path.join(GUEST_UPLOAD_DIR, "temp", guest_session_id, subject_id)
+                os.makedirs(guest_path, exist_ok=True)
+                file_path = os.path.join(guest_path, f"{file_id}{file_extension}")
+                storage_path = f"guest/temp/{guest_session_id}/{subject_id}/{file_id}{file_extension}"
+            else:
+                user_path = os.path.join(UPLOAD_DIR, "user", user_id or "anonymous", subject_id)
+                os.makedirs(user_path, exist_ok=True)
+                file_path = os.path.join(user_path, f"{file_id}{file_extension}")
+                storage_path = f"user/{user_id or 'anonymous'}/{subject_id}/{file_id}{file_extension}"
+            
+            # Save file
+            with open(file_path, "wb") as f:
+                f.write(file_content)
+            
+            # Calculate file hash
+            file_hash = calculate_file_hash(file_path)
+            
+            # Check for duplicates
+            duplicate_info = None
+            try:
+                existing_file = supabase.get_file_by_hash(file_hash, subject_id)
+                if existing_file:
+                    from app.models.schemas import DuplicateDetectionResult, FileDuplicateInfo
+                    duplicate_info = DuplicateDetectionResult(
+                        file_duplicate=FileDuplicateInfo(
+                            is_duplicate=True,
+                            existing_file_id=existing_file["id"],
+                            existing_file_name=existing_file["name"],
+                            similarity=1.0
+                        ),
+                        chunk_duplicates=[],
+                        has_duplicates=True
+                    )
+            except Exception as e:
+                print(f"Error checking duplicates: {e}")
+            
+            # Save file record to database
+            try:
+                supabase.create_file({
+                    "id": file_id,
+                    "subject_id": subject_id,
+                    "name": file.filename,
+                    "storage_path": storage_path,
+                    "storage_size": file_size,
+                    "file_hash": file_hash,
+                    "status": "pending"
+                })
+            except Exception as e:
+                print(f"Error creating file record: {e}")
+                file_responses.append(FileResponse(
+                    file_id=file_id,
+                    status="failed",
+                    message=f"Failed to save file record: {str(e)}",
+                    duplicate_info=None
+                ))
+                failed += 1
+                continue
+            
+            # Process file in background
+            background_tasks.add_task(
+                process_file_background,
+                file_path=file_path,
+                file_id=file_id,
+                subject_id=subject_id,
+                file_name=file.filename,
+                file_extension=file_extension,
+                storage_path=storage_path,
+                file_size=file_size,
+                file_hash=file_hash
+            )
+            
+            # Prepare response message
+            message = f"File {file.filename} uploaded and processing started"
+            if storage_check and storage_check.get("warning"):
+                message += f" | {storage_check['message']}"
+            
+            file_responses.append(FileResponse(
+                file_id=file_id,
+                status="processing",
+                message=message,
+                duplicate_info=duplicate_info
+            ))
+            successful += 1
+            
+        except Exception as e:
+            print(f"Error processing file {file.filename}: {e}")
+            file_responses.append(FileResponse(
+                file_id="",
+                status="failed",
+                message=f"Error: {str(e)}",
+                duplicate_info=None
+            ))
+            failed += 1
+    
+    return MultiFileResponse(
+        files=file_responses,
+        total=len(files),
+        successful=successful,
+        failed=failed
     )
 
 @router.get("/{file_id}/status", response_model=FileStatus)

@@ -1,15 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-  PenTool, Upload, FolderPlus, Trash2, Send, Book, FileText, 
-  X, ChevronRight, Lock, Menu, ArrowLeft, Play, ShieldCheck 
+import type { FC } from 'react';
+
+import {
+  PenTool, Upload, FolderPlus, Trash2, Send, Book, FileText,
+  X, ChevronRight, Lock, Menu, ArrowLeft, Play, ShieldCheck
 } from 'lucide-react';
 import { ViewState, Subject, Message, NoteFile } from './types';
 import { FEATURES, TESTIMONIALS } from './constants';
 import { Button, PaperCard, StickyNote, Highlighter } from './components/UIComponents';
-import { sendMessageToInkSage, uploadFile, getFileStatus, createSubject, getSubjects, createGuestSession, FileUploadResponse, DuplicateDetectionResult, getUserStorage } from './services/apiService';
+import { sendMessageToInkSage, sendMessageToInkSageStream, uploadFile, uploadMultipleFiles, getFileStatus, createSubject, getSubjects, createGuestSession, FileUploadResponse, DuplicateDetectionResult, getUserStorage } from './services/apiService';
 import { setupTabCloseHandler } from './utils/tabCloseHandler';
 import { DuplicateDetectionModal } from './components/DuplicateDetectionModal';
 import { StorageWarning } from './components/StorageWarning';
+import { AuthModal } from './components/AuthModal';
+import { SubjectNameModal } from './components/SubjectNameModal';
 import { authService } from './services/supabaseService';
 
 // --- Main Component ---
@@ -37,6 +41,8 @@ const App: React.FC = () => {
   });
   const [user, setUser] = useState<any>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showSubjectModal, setShowSubjectModal] = useState(false);
   const [storageInfo, setStorageInfo] = useState<{
     storage_used: number;
     max_storage: number;
@@ -54,6 +60,60 @@ const App: React.FC = () => {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory, activeSubjectId]);
+
+  // Load subjects when user logs in or guest session starts
+  useEffect(() => {
+    const loadSubjects = async () => {
+      if (view === 'app' && (user || localStorage.getItem('guest_session_id'))) {
+        try {
+          const loadedSubjects = await getSubjects();
+          if (loadedSubjects.length > 0) {
+            const subjectsWithColor = loadedSubjects.map((sub: Subject) => ({
+              ...sub,
+              color: 'bg-blue-100',
+              files: []
+            }));
+            setSubjects(subjectsWithColor);
+            // Set first subject as active if none selected
+            if (!activeSubjectId && subjectsWithColor.length > 0) {
+              setActiveSubjectId(subjectsWithColor[0].id);
+            }
+          } else {
+            // No subjects yet - clear any existing subjects
+            setSubjects([]);
+            setActiveSubjectId(null);
+          }
+        } catch (error) {
+          console.error('Error loading subjects:', error);
+        }
+      }
+    };
+    loadSubjects();
+  }, [user, view]);
+
+  // Persist chat history to localStorage
+  useEffect(() => {
+    if (Object.keys(chatHistory).length > 0) {
+      const storageKey = user ? `chat_history_${user.id}` : `chat_history_guest`;
+      localStorage.setItem(storageKey, JSON.stringify(chatHistory));
+    }
+  }, [chatHistory, user]);
+
+  // Load chat history from localStorage when user logs in
+  useEffect(() => {
+    if (user || localStorage.getItem('guest_session_id')) {
+      const storageKey = user ? `chat_history_${user.id}` : `chat_history_guest`;
+      const savedHistory = localStorage.getItem(storageKey);
+      if (savedHistory) {
+        try {
+          const parsed = JSON.parse(savedHistory);
+          setChatHistory(parsed);
+        } catch (error) {
+          console.error('Error loading chat history:', error);
+        }
+      }
+    }
+  }, [user]);
 
   // Setup auth state listener
   useEffect(() => {
@@ -93,9 +153,11 @@ const App: React.FC = () => {
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
         localStorage.removeItem('guest_session_id');
+        // Don't clear chat history - keep it for when user logs back in
         if (view === 'app') {
           setView('landing');
           setSubjects([]);
+          setActiveSubjectId(null);
         }
       }
     });
@@ -146,6 +208,32 @@ const App: React.FC = () => {
   }, [user]);
 
   // Handlers
+  const handleSignIn = () => {
+    setShowAuthModal(true);
+  };
+
+  const handleSignInWithGoogle = async () => {
+    try {
+      await authService.signInWithGoogle();
+      // OAuth will redirect, so we don't need to handle success here
+    } catch (error) {
+      console.error('Google sign-in error:', error);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await authService.signOut();
+      setUser(null);
+      setSubjects([]);
+      if (view === 'app') {
+        setView('landing');
+      }
+    } catch (error) {
+      console.error('Sign out error:', error);
+    }
+  };
+
   const handleStartGuestMode = async () => {
     try {
       const session = await createGuestSession();
@@ -171,75 +259,129 @@ const App: React.FC = () => {
     }
   };
 
-  const handleCreateSubject = async () => {
-    const name = prompt("Enter subject name:");
-    if (name) {
-      try {
-        const newSub = await createSubject(name);
-        const subjectWithColor: Subject = {
-          id: newSub.id,
-          name: newSub.name,
-          color: 'bg-blue-100',
-          files: []
-        };
-        setSubjects([...subjects, subjectWithColor]);
-        setActiveSubjectId(newSub.id);
-      } catch (error) {
-        console.error('Failed to create subject:', error);
-        // Fallback to local creation
-        const newSub: Subject = {
-          id: Date.now().toString(),
-          name,
-          color: 'bg-blue-100',
-          files: []
-        };
-        setSubjects([...subjects, newSub]);
-        setActiveSubjectId(newSub.id);
+  const handleCreateSubject = () => {
+    setShowSubjectModal(true);
+  };
+
+  const handleSubjectSubmit = async (name: string) => {
+    try {
+      const newSub = await createSubject(name);
+      const subjectWithColor: Subject = {
+        id: newSub.id,
+        name: newSub.name,
+        color: 'bg-blue-100',
+        files: []
+      };
+      setSubjects([...subjects, subjectWithColor]);
+      setActiveSubjectId(newSub.id);
+      // Ensure we're in app view and chat is visible
+      if (view !== 'app') {
+        setView('app');
+      }
+    } catch (error) {
+      console.error('Failed to create subject:', error);
+      // Fallback to local creation
+      const newSub: Subject = {
+        id: Date.now().toString(),
+        name,
+        color: 'bg-blue-100',
+        files: []
+      };
+      setSubjects([...subjects, newSub]);
+      setActiveSubjectId(newSub.id);
+      // Ensure we're in app view and chat is visible
+      if (view !== 'app') {
+        setView('app');
       }
     }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || !activeSubjectId) return;
-    const file = e.target.files[0];
-    if (!file) return;
+    
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
 
-    // Check file size (50MB limit)
+    // Validate all files first
     const maxSize = 50 * 1024 * 1024; // 50MB
-    if (file.size > maxSize) {
-      alert('File size exceeds 50MB limit');
-      return;
+    const allowedExtensions = ['.pdf', '.docx', '.pptx', '.xlsx', '.xls', '.csv', '.txt', '.md'];
+    const validFiles: File[] = [];
+    const invalidFiles: string[] = [];
+
+    files.forEach((file) => {
+      const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+      
+      if (file.size > maxSize) {
+        invalidFiles.push(`${file.name} (exceeds 50MB limit)`);
+      } else if (!allowedExtensions.includes(fileExtension)) {
+        invalidFiles.push(`${file.name} (unsupported file type)`);
+      } else {
+        validFiles.push(file);
+      }
+    });
+
+    if (invalidFiles.length > 0) {
+      alert(`Some files were skipped:\n\n${invalidFiles.join('\n')}\n\nAllowed types: PDF, DOCX, PPTX, XLSX, XLS, CSV, TXT, MD\nMax size: 50MB per file`);
     }
 
-    // Check file type
-    const allowedExtensions = ['.pdf', '.docx', '.pptx', '.xlsx', '.xls', '.csv', '.txt', '.md'];
-    const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
-    if (!allowedExtensions.includes(fileExtension)) {
-      alert('File type not supported. Allowed: PDF, DOCX, PPTX, XLSX, XLS, CSV, TXT, MD');
-      return;
-    }
+    if (validFiles.length === 0) return;
 
     try {
-      // Upload to backend
-      const response = await uploadFile(file, activeSubjectId, (progress) => {
-        console.log(`Upload progress: ${progress}%`);
-      });
-
-      // Check for duplicates
-      if (response.duplicate_info && response.duplicate_info.has_duplicates) {
-        // Show duplicate detection modal
-        setDuplicateModal({
-          isOpen: true,
-          duplicateInfo: response.duplicate_info,
-          fileName: file.name,
-          pendingFileId: response.file_id
+      let responses: FileUploadResponse[] = [];
+      
+      if (validFiles.length === 1) {
+        // Single file upload (existing behavior)
+        const response = await uploadFile(validFiles[0], activeSubjectId, (progress) => {
+          console.log(`Upload progress: ${progress}%`);
         });
-        // Don't add file to state yet - wait for user decision
-        return;
+        responses = [response];
+      } else {
+        // Multiple file upload
+        const multiResponse = await uploadMultipleFiles(validFiles, activeSubjectId, (progress) => {
+          console.log(`Upload progress: ${progress}%`);
+        });
+        responses = multiResponse.files;
+        
+        // Show summary if some files failed
+        if (multiResponse.failed > 0) {
+          const failedFiles = multiResponse.files
+            .filter(f => f.status === 'failed')
+            .map(f => f.message)
+            .join('\n');
+          alert(`Upload complete!\n\nSuccessful: ${multiResponse.successful}\nFailed: ${multiResponse.failed}\n\n${failedFiles ? `Failed files:\n${failedFiles}` : ''}`);
+        } else {
+          alert(`Successfully uploaded ${multiResponse.successful} file(s)!`);
+        }
       }
 
-      // No duplicates, proceed normally
-      addFileToSubject(response.file_id, file.name, fileExtension);
+      // Process each response
+      // Note: Responses are returned in the same order as files were sent
+      for (let i = 0; i < responses.length; i++) {
+        const response = responses[i];
+        const file = validFiles[i]; // Match by index since order is preserved
+        
+        if (!file || response.status === 'failed') {
+          continue; // Skip failed files or missing files
+        }
+
+        // Check for duplicates
+        if (response.duplicate_info && response.duplicate_info.has_duplicates) {
+          // Show duplicate detection modal for first duplicate
+          // User can handle duplicates one at a time
+          setDuplicateModal({
+            isOpen: true,
+            duplicateInfo: response.duplicate_info,
+            fileName: file.name,
+            pendingFileId: response.file_id
+          });
+          // Continue with other files - user will handle duplicate via modal
+          continue;
+        }
+
+        // No duplicates, add to subject
+        const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+        addFileToSubject(response.file_id, file.name, fileExtension);
+      }
 
       // Refresh storage info after upload (for logged-in users)
       if (user) {
@@ -257,7 +399,7 @@ const App: React.FC = () => {
 
     } catch (err: any) {
       console.error("Upload failed", err);
-      const errorMessage = err.response?.data?.detail || err.message || "Could not upload file. Please try again.";
+      const errorMessage = err.response?.data?.detail || err.message || "Could not upload file(s). Please try again.";
       
       // Check if it's a storage limit error
       if (errorMessage.includes("storage limit") || errorMessage.includes("Storage limit")) {
@@ -266,6 +408,9 @@ const App: React.FC = () => {
         alert(errorMessage);
       }
     }
+    
+    // Reset file input
+    e.target.value = '';
   };
 
   const addFileToSubject = (fileId: string, fileName: string, fileExtension: string) => {
@@ -279,7 +424,7 @@ const App: React.FC = () => {
       timestamp: Date.now()
     };
 
-    setSubjects(prev => prev.map(sub => {
+    setSubjects((prev: Subject[]) => prev.map((sub: Subject) => {
       if (sub.id === activeSubjectId) {
         return { ...sub, files: [...sub.files, newFile] };
       }
@@ -345,9 +490,9 @@ const App: React.FC = () => {
 
   const handleDeleteFile = (fileId: string) => {
     if (!activeSubjectId) return;
-    setSubjects(prev => prev.map(sub => {
+    setSubjects((prev: Subject[]) => prev.map((sub: Subject) => {
       if (sub.id === activeSubjectId) {
-        return { ...sub, files: sub.files.filter(f => f.id !== fileId) };
+        return { ...sub, files: sub.files.filter((f: NoteFile) => f.id !== fileId) };
       }
       return sub;
     }));
@@ -356,13 +501,13 @@ const App: React.FC = () => {
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || !activeSubjectId) return;
     
-    const activeSub = subjects.find(s => s.id === activeSubjectId);
+    const activeSub = subjects.find((s: Subject) => s.id === activeSubjectId);
     if (!activeSub) return;
 
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
-      text: inputMessage,
+      text: inputMessage.trim(),
       timestamp: Date.now()
     };
 
@@ -370,29 +515,95 @@ const App: React.FC = () => {
     const currentHistory = chatHistory[activeSubjectId] || [];
     const updatedHistory = [...currentHistory, userMsg];
     
-    setChatHistory(prev => ({
+    setChatHistory((prev: Record<string, Message[]>) => ({
       ...prev,
       [activeSubjectId]: updatedHistory
     }));
     setInputMessage("");
     setIsThinking(true);
 
-    // Call backend API
-    const response = await sendMessageToInkSage(userMsg.text, activeSubjectId, updatedHistory);
-
+    // Create bot message placeholder for streaming
+    const botMsgId = (Date.now() + 1).toString();
     const botMsg: Message = {
-      id: (Date.now() + 1).toString(),
+      id: botMsgId,
       role: 'model',
-      text: response.text,
+      text: '',
       timestamp: Date.now(),
-      citations: response.citations
+      citations: []
     };
 
-    setChatHistory(prev => ({
+    // Add empty bot message immediately for streaming
+    setChatHistory((prev: Record<string, Message[]>) => ({
       ...prev,
       [activeSubjectId]: [...updatedHistory, botMsg]
     }));
-    setIsThinking(false);
+
+    // Use streaming API
+    let accumulatedText = '';
+    let citations: string[] = [];
+
+    await sendMessageToInkSageStream(
+      userMsg.text,
+      activeSubjectId,
+      updatedHistory,
+      {
+        onChunk: (chunk: string) => {
+          accumulatedText += chunk;
+          // Update the bot message with accumulated text
+          setChatHistory((prev: Record<string, Message[]>) => {
+            const subjectHistory = prev[activeSubjectId] || [];
+            const updatedHistory = subjectHistory.map((msg: Message) => {
+              if (msg.id === botMsgId) {
+                return { ...msg, text: accumulatedText };
+              }
+              return msg;
+            });
+            return {
+              ...prev,
+              [activeSubjectId]: updatedHistory
+            };
+          });
+          setIsThinking(false); // Stop thinking indicator once first chunk arrives
+        },
+        onCitations: (cits: string[]) => {
+          citations = cits;
+          // Update citations in bot message
+          setChatHistory((prev: Record<string, Message[]>) => {
+            const subjectHistory = prev[activeSubjectId] || [];
+            const updatedHistory = subjectHistory.map((msg: Message) => {
+              if (msg.id === botMsgId) {
+                return { ...msg, citations: cits };
+              }
+              return msg;
+            });
+            return {
+              ...prev,
+              [activeSubjectId]: updatedHistory
+            };
+          });
+        },
+        onError: (error: string) => {
+          // Update bot message with error
+          setChatHistory((prev: Record<string, Message[]>) => {
+            const subjectHistory = prev[activeSubjectId] || [];
+            const updatedHistory = subjectHistory.map((msg: Message) => {
+              if (msg.id === botMsgId) {
+                return { ...msg, text: error };
+              }
+              return msg;
+            });
+            return {
+              ...prev,
+              [activeSubjectId]: updatedHistory
+            };
+          });
+          setIsThinking(false);
+        },
+        onComplete: () => {
+          setIsThinking(false);
+        }
+      }
+    );
   };
 
   // --- RENDER: LANDING PAGE ---
@@ -412,7 +623,12 @@ const App: React.FC = () => {
               <a href="#privacy" className="hover:text-slate-900">Privacy</a>
             </div>
             <div className="flex items-center gap-4">
-              <button className="text-sm font-medium text-stone-600 hover:text-slate-900">Log In</button>
+              <button 
+                onClick={handleSignIn}
+                className="text-sm font-medium text-stone-600 hover:text-slate-900"
+              >
+                Log In
+              </button>
               <Button onClick={handleStartGuestMode} className="bg-slate-900 text-white px-5 py-2 text-sm rounded-full shadow-md hover:bg-slate-700">
                 Try Guest Mode
               </Button>
@@ -654,6 +870,16 @@ const App: React.FC = () => {
              <p className="text-stone-400 text-xs">© 2024 InkSage. All rights reserved.</p>
           </div>
         </footer>
+
+        {/* Auth Modal */}
+        <AuthModal 
+          isOpen={showAuthModal} 
+          onClose={() => setShowAuthModal(false)}
+          onSuccess={() => {
+            setShowAuthModal(false);
+            // Auth state change will be handled by the useEffect listener
+          }}
+        />
       </div>
     );
   }
@@ -670,7 +896,12 @@ const App: React.FC = () => {
           <div className="flex items-center gap-2 font-serif font-bold text-lg cursor-pointer" onClick={() => setView('landing')}>
             <ArrowLeft className="w-4 h-4" /> InkSage
           </div>
-          <button className="md:hidden" onClick={() => setIsSidebarOpen(false)}>
+          <button 
+            className="md:hidden" 
+            onClick={() => setIsSidebarOpen(false)}
+            title="Close sidebar"
+            aria-label="Close sidebar"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -754,7 +985,12 @@ const App: React.FC = () => {
         {/* Header */}
         <header className="h-16 bg-white/80 backdrop-blur border-b border-stone-200 flex items-center justify-between px-6 shadow-sm">
           <div className="flex items-center gap-3">
-             <button className="md:hidden" onClick={() => setIsSidebarOpen(true)}>
+             <button 
+               className="md:hidden" 
+               onClick={() => setIsSidebarOpen(true)}
+               title="Open sidebar"
+               aria-label="Open sidebar"
+             >
                <Menu className="w-5 h-5" />
              </button>
              <h2 className="font-serif font-bold text-xl text-slate-800">
@@ -782,7 +1018,7 @@ const App: React.FC = () => {
                 <label className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium cursor-pointer hover:bg-slate-700 transition-all shadow-md active:translate-y-0.5">
                   <Upload className="w-4 h-4" />
                   <span className="hidden sm:inline">Add Notes</span>
-                  <input type="file" className="hidden" onChange={handleFileUpload} accept=".pdf,.docx,.pptx,.xlsx,.xls,.csv,.txt,.md" />
+                  <input type="file" className="hidden" onChange={handleFileUpload} accept=".pdf,.docx,.pptx,.xlsx,.xls,.csv,.txt,.md" multiple />
                 </label>
               </>
             )}
@@ -879,6 +1115,8 @@ const App: React.FC = () => {
                onClick={handleSendMessage}
                disabled={!inputMessage.trim() || !activeSubject || isThinking}
                className="absolute right-2 top-2 bottom-2 p-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 disabled:bg-stone-300 disabled:cursor-not-allowed transition-colors shadow-md"
+               title="Send message"
+               aria-label="Send message"
              >
                <Send className="w-4 h-4" />
              </button>
@@ -898,6 +1136,23 @@ const App: React.FC = () => {
         onReplace={handleDuplicateReplace}
         onKeepBoth={handleDuplicateKeepBoth}
         onCancel={handleDuplicateCancel}
+      />
+
+      {/* Auth Modal */}
+      <AuthModal 
+        isOpen={showAuthModal} 
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={() => {
+          setShowAuthModal(false);
+          // Auth state change will be handled by the useEffect listener
+        }}
+      />
+
+      {/* Subject Name Modal */}
+      <SubjectNameModal
+        isOpen={showSubjectModal}
+        onClose={() => setShowSubjectModal(false)}
+        onSubmit={handleSubjectSubmit}
       />
     </div>
   );

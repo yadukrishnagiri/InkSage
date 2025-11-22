@@ -5,11 +5,16 @@ A RAG-based private study workspace for students. Upload your notes, organize th
 ## Features
 
 - **Multi-file Support**: PDF, DOCX, PPTX, XLSX, XLS, CSV, TXT, MD
+- **Batch Upload**: Upload multiple files simultaneously
 - **Subject-based Organization**: Each subject has its own chat workspace
+- **Streaming Responses**: Real-time chat responses that appear as they're generated
 - **Proof-based Answers**: All answers include citations from your notes
 - **Hybrid Search**: Combines semantic (vector) and keyword (BM25) search
 - **Guest Mode**: Try without signing up (auto-deletes on close)
+- **User Authentication**: Sign up with email or Google OAuth
+- **Chat History Persistence**: Your conversations are saved and restored
 - **PDF Export**: Export chat conversations as PDF
+- **Storage Management**: 500MB storage limit for logged-in users with warnings
 
 ## Tech Stack
 
@@ -125,16 +130,18 @@ Frontend will run on `http://localhost:5173` (Vite default port)
 
 1. Start both backend and frontend servers
 2. Open `http://localhost:5173` in your browser
-3. Click "Try Guest Mode" or sign up
-4. Create a subject
-5. Upload files (PDF, DOCX, PPTX, etc.)
-6. Wait for files to process
-7. Start chatting with your notes!
+3. Click "Try Guest Mode" or sign up with email/Google
+4. Create a subject (click "New Subject" button)
+5. Upload files - you can select multiple files at once!
+6. Wait for files to process (status shown in file list)
+7. Start chatting with your notes - responses stream in real-time!
+8. Your chat history is automatically saved and restored
 
 ## API Endpoints
 
 ### Files
-- `POST /api/files/upload` - Upload a file
+- `POST /api/files/upload` - Upload a single file
+- `POST /api/files/upload-multiple` - Upload multiple files at once
 - `GET /api/files/{file_id}/status` - Get file processing status
 - `DELETE /api/files/{file_id}` - Delete a file
 
@@ -144,12 +151,16 @@ Frontend will run on `http://localhost:5173` (Vite default port)
 - `DELETE /api/subjects/{subject_id}` - Delete subject
 
 ### Chat
-- `POST /api/chat/query` - Send query to RAG system
+- `POST /api/chat/query` - Send query to RAG system (non-streaming)
+- `POST /api/chat/query-stream` - Send query with streaming response (SSE)
 - `POST /api/chat/export-pdf` - Export chat as PDF
 
 ### Guest
 - `POST /api/guest/session` - Create guest session
 - `GET /api/guest/session/{session_id}` - Get session info
+
+### User
+- `GET /api/user/storage` - Get storage usage for logged-in users
 
 ## Development
 
@@ -248,6 +259,13 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
    - anon/public key → `SUPABASE_KEY` (frontend) and `SUPABASE_KEY` (backend)
    - service_role key → `SUPABASE_SERVICE_KEY` (backend only)
 
+## Performance Optimizations
+
+- **Streaming Responses**: Chat responses stream in real-time for faster perceived performance
+- **Optimized Context**: Reduced context size (top_k=7) for faster processing
+- **Token Limits**: Optimized max_tokens (1024) for faster generation
+- **Context Limiting**: Automatic context length limiting to prevent oversized prompts
+
 ## Troubleshooting
 
 ### Backend Issues
@@ -266,6 +284,10 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 - Run `python backend/test_db_connection.py` to diagnose
 - Ensure database migrations are run in Supabase SQL editor
 
+**Foreign key constraint errors:**
+- User records are automatically created when needed
+- If you see "user_id not present in users table", the system will auto-create the user
+
 ### Frontend Issues
 
 **White screen on load:**
@@ -277,6 +299,16 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 - Verify backend is running on `http://localhost:8000`
 - Check `VITE_API_URL` in `frontend/.env.local`
 - Test connection with `frontend/test-connection.html`
+
+**Streaming not working:**
+- Ensure backend is running latest version with streaming endpoint
+- Check browser console for SSE connection errors
+- Verify CORS is configured correctly in `backend/app/api/main.py`
+
+**Chat history not persisting:**
+- Chat history is stored in localStorage per user/guest
+- Logged-in users: history persists across sessions
+- Guest users: history persists until browser cache is cleared
 
 ## License
 

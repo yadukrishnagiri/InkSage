@@ -37,6 +37,12 @@ class FileResponse(BaseModel):
     message: str
     duplicate_info: Optional[DuplicateDetectionResult] = None
 
+class MultiFileResponse(BaseModel):
+    files: List[FileResponse]
+    total: int
+    successful: int
+    failed: int
+
 class FileStatus(BaseModel):
     status: str
     progress: Optional[float] = None

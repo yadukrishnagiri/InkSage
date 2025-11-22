@@ -131,6 +131,11 @@ TEST_RESULTS.md
 backend/TEST_RESULTS.md
 test_results/
 *.test
+backend/test_supabase_key.py
+backend/test_api_connection.py
+backend/test_db_connection.py
+backend/test_groq_key.py
+frontend/test-connection.html
 
 # Documentation (user can choose to commit or not)
 # Uncomment if you don't want to track these:

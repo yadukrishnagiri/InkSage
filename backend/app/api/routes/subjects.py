@@ -42,12 +42,21 @@ async def create_subject(
     """Create a new subject."""
     user = _auth.get_user_from_header(authorization)
     user_id = user.get("user_id") if user else None
+    user_email = user.get("email") if user else None
     
     # Create ChromaDB collection for this subject
     subject_id = str(uuid.uuid4())
     _chromadb_service.get_collection(subject_id)
     
     try:
+        # Ensure user exists in database before creating subject
+        if user_id and user_email:
+            existing_user = _supabase.get_user(user_id)
+            if not existing_user:
+                # Create user record if it doesn't exist
+                print(f"Creating user record for {user_id} ({user_email})")
+                _supabase.create_user(user_id, user_email)
+        
         # Save to Supabase
         result = _supabase.create_subject(name=subject.name, user_id=user_id)
         if result:

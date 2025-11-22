@@ -5,8 +5,12 @@ from supabase import create_client, Client
 import os
 from typing import Optional
 from dotenv import load_dotenv
+from pathlib import Path
 
-# Load environment variables
+# Load environment variables from backend directory
+env_path = Path(__file__).parent.parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
+# Also try loading from current directory (for compatibility)
 load_dotenv()
 
 class SupabaseService:
@@ -18,6 +22,10 @@ class SupabaseService:
     def __init__(self):
         """Initialize Supabase client."""
         if SupabaseService._client is None:
+            # Reload env to ensure we have latest values
+            load_dotenv(dotenv_path=env_path, override=True)
+            load_dotenv(override=True)
+            
             supabase_url = os.getenv("SUPABASE_URL")
             # Use anon key (service key format 'sb_secret_' not supported by Python client)
             supabase_key = os.getenv("SUPABASE_KEY")
@@ -27,7 +35,13 @@ class SupabaseService:
                     "SUPABASE_URL and SUPABASE_KEY must be set in environment variables"
                 )
             
-            SupabaseService._client = create_client(supabase_url, supabase_key)
+            try:
+                SupabaseService._client = create_client(supabase_url, supabase_key)
+            except Exception as e:
+                raise ValueError(
+                    f"Failed to create Supabase client: {str(e)}. "
+                    f"URL: {supabase_url}, Key length: {len(supabase_key) if supabase_key else 0}"
+                )
     
     @classmethod
     def get_client(cls) -> Client:
@@ -42,6 +56,12 @@ class SupabaseService:
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
+    
+    @classmethod
+    def reset(cls):
+        """Reset singleton instances (useful for testing or re-initialization)."""
+        cls._instance = None
+        cls._client = None
     
     # Database operations
     def get_user(self, user_id: str):
