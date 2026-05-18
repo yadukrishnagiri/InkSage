@@ -20,35 +20,44 @@ class SupabaseService:
     _client: Optional[Client] = None
     
     def __init__(self):
-        """Initialize Supabase client."""
-        if SupabaseService._client is None:
-            # Reload env to ensure we have latest values
-            load_dotenv(dotenv_path=env_path, override=True)
-            load_dotenv(override=True)
-            
-            supabase_url = os.getenv("SUPABASE_URL")
-            # Use anon key (service key format 'sb_secret_' not supported by Python client)
-            supabase_key = os.getenv("SUPABASE_KEY")
-            
-            if not supabase_url or not supabase_key:
-                raise ValueError(
-                    "SUPABASE_URL and SUPABASE_KEY must be set in environment variables"
-                )
-            
-            try:
-                SupabaseService._client = create_client(supabase_url, supabase_key)
-            except Exception as e:
-                raise ValueError(
-                    f"Failed to create Supabase client: {str(e)}. "
-                    f"URL: {supabase_url}, Key length: {len(supabase_key) if supabase_key else 0}"
-                )
+        """Initialize Supabase client when credentials are configured."""
+        self.enabled = SupabaseService._client is not None
+        if SupabaseService._client is not None:
+            return
+
+        load_dotenv(dotenv_path=env_path, override=True)
+        load_dotenv(override=True)
+
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
+
+        if not supabase_url or not supabase_key:
+            self.enabled = False
+            print(
+                "WARNING: Supabase not configured (SUPABASE_URL / SUPABASE_KEY). "
+                "Guest mode and local fallbacks will be used."
+            )
+            return
+
+        try:
+            SupabaseService._client = create_client(supabase_url, supabase_key)
+            self.enabled = True
+        except Exception as e:
+            self.enabled = False
+            print(f"WARNING: Supabase client failed to initialize: {e}")
     
     @classmethod
-    def get_client(cls) -> Client:
-        """Get Supabase client instance (singleton)."""
+    def get_client(cls) -> Optional[Client]:
+        """Get Supabase client instance (singleton), or None if not configured."""
         if cls._client is None:
             cls()
         return cls._client
+
+    def _require_client(self) -> Client:
+        client = self.get_client()
+        if client is None:
+            raise RuntimeError("Supabase is not configured")
+        return client
     
     @classmethod
     def get_instance(cls) -> 'SupabaseService':
@@ -66,19 +75,25 @@ class SupabaseService:
     # Database operations
     def get_user(self, user_id: str):
         """Get user by ID."""
-        client = self.get_client()
+        if not self.enabled:
+            return None
+        client = self._require_client()
         response = client.table("users").select("*").eq("id", user_id).execute()
         return response.data[0] if response.data else None
     
     def get_user_by_email(self, email: str):
         """Get user by email."""
-        client = self.get_client()
+        if not self.enabled:
+            return None
+        client = self._require_client()
         response = client.table("users").select("*").eq("email", email).execute()
         return response.data[0] if response.data else None
     
     def create_user(self, user_id: str, email: str):
         """Create a new user record."""
-        client = self.get_client()
+        if not self.enabled:
+            return None
+        client = self._require_client()
         response = client.table("users").insert({
             "id": user_id,
             "email": email,
@@ -88,7 +103,9 @@ class SupabaseService:
     
     def update_user_storage(self, user_id: str, storage_used: int):
         """Update user's storage usage."""
-        client = self.get_client()
+        if not self.enabled:
+            return None
+        client = self._require_client()
         response = client.table("users").update({
             "storage_used": storage_used
         }).eq("id", user_id).execute()
@@ -96,7 +113,9 @@ class SupabaseService:
     
     def get_subjects(self, user_id: Optional[str] = None, guest_session_id: Optional[str] = None):
         """Get subjects for a user or guest session."""
-        client = self.get_client()
+        if not self.enabled:
+            return []
+        client = self._require_client()
         query = client.table("subjects").select("*")
         
         if user_id:
@@ -114,7 +133,9 @@ class SupabaseService:
     
     def create_subject(self, name: str, user_id: Optional[str] = None):
         """Create a new subject."""
-        client = self.get_client()
+        if not self.enabled:
+            return None
+        client = self._require_client()
         data = {"name": name}
         if user_id:
             data["user_id"] = user_id
@@ -124,43 +145,57 @@ class SupabaseService:
     
     def delete_subject(self, subject_id: str):
         """Delete a subject."""
-        client = self.get_client()
+        if not self.enabled:
+            return []
+        client = self._require_client()
         response = client.table("subjects").delete().eq("id", subject_id).execute()
         return response.data
     
     def get_file_by_hash(self, file_hash: str, subject_id: str):
         """Get file by hash to check for duplicates."""
-        client = self.get_client()
+        if not self.enabled:
+            return None
+        client = self._require_client()
         response = client.table("files").select("*").eq("file_hash", file_hash).eq("subject_id", subject_id).execute()
         return response.data[0] if response.data else None
     
     def create_file(self, file_data: dict):
         """Create a file record."""
-        client = self.get_client()
+        if not self.enabled:
+            return None
+        client = self._require_client()
         response = client.table("files").insert(file_data).execute()
         return response.data[0] if response.data else None
     
     def update_file_status(self, file_id: str, status: str):
         """Update file processing status."""
-        client = self.get_client()
+        if not self.enabled:
+            return None
+        client = self._require_client()
         response = client.table("files").update({"status": status}).eq("id", file_id).execute()
         return response.data[0] if response.data else None
     
     def get_files_by_subject(self, subject_id: str):
         """Get all files for a subject."""
-        client = self.get_client()
+        if not self.enabled:
+            return []
+        client = self._require_client()
         response = client.table("files").select("*").eq("subject_id", subject_id).execute()
         return response.data
     
     def delete_file(self, file_id: str):
         """Delete a file record."""
-        client = self.get_client()
+        if not self.enabled:
+            return []
+        client = self._require_client()
         response = client.table("files").delete().eq("id", file_id).execute()
         return response.data
     
     def get_storage_used(self, user_id: str) -> int:
         """Get total storage used by a user."""
-        client = self.get_client()
+        if not self.enabled:
+            return 0
+        client = self._require_client()
         response = client.table("users").select("storage_used").eq("id", user_id).execute()
         if response.data:
             return response.data[0].get("storage_used", 0)
@@ -169,7 +204,9 @@ class SupabaseService:
     # Guest session operations
     def create_guest_session(self, session_id: str, expires_at: str):
         """Create a guest session."""
-        client = self.get_client()
+        if not self.enabled:
+            return None
+        client = self._require_client()
         response = client.table("guest_sessions").insert({
             "session_id": session_id,
             "expires_at": expires_at
@@ -178,20 +215,26 @@ class SupabaseService:
     
     def get_guest_session_by_id(self, session_id: str):
         """Get guest session by session_id."""
-        client = self.get_client()
+        if not self.enabled:
+            return None
+        client = self._require_client()
         response = client.table("guest_sessions").select("*").eq("session_id", session_id).execute()
         return response.data[0] if response.data else None
     
     def delete_guest_session(self, session_id: str):
         """Delete a guest session."""
-        client = self.get_client()
+        if not self.enabled:
+            return []
+        client = self._require_client()
         response = client.table("guest_sessions").delete().eq("session_id", session_id).execute()
         return response.data
     
     def cleanup_expired_guest_sessions(self):
         """Delete expired guest sessions."""
         from datetime import datetime
-        client = self.get_client()
+        if not self.enabled:
+            return []
+        client = self._require_client()
         now = datetime.utcnow().isoformat()
         response = client.table("guest_sessions").delete().lt("expires_at", now).execute()
         return response.data
@@ -199,19 +242,25 @@ class SupabaseService:
     # Storage operations
     def upload_file_to_storage(self, bucket: str, path: str, file_content: bytes, content_type: str = "application/octet-stream"):
         """Upload file to Supabase Storage."""
-        client = self.get_client()
+        if not self.enabled:
+            return None
+        client = self._require_client()
         response = client.storage.from_(bucket).upload(path, file_content, file_options={"content-type": content_type})
         return response
     
     def delete_file_from_storage(self, bucket: str, path: str):
         """Delete file from Supabase Storage."""
-        client = self.get_client()
+        if not self.enabled:
+            return []
+        client = self._require_client()
         response = client.storage.from_(bucket).remove([path])
         return response
     
     def get_file_url(self, bucket: str, path: str):
         """Get public URL for a file."""
-        client = self.get_client()
+        if not self.enabled:
+            return None
+        client = self._require_client()
         response = client.storage.from_(bucket).get_public_url(path)
         return response
 

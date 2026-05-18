@@ -13,6 +13,7 @@ class AuthService:
         """Initialize auth service."""
         self.supabase = SupabaseService.get_instance()
         self.client = SupabaseService.get_client()
+        self.auth_enabled = self.client is not None
     
     def verify_token(self, token: str) -> Optional[dict]:
         """
@@ -24,6 +25,8 @@ class AuthService:
         Returns:
             Dict with user_id and email, or None if invalid
         """
+        if not self.auth_enabled:
+            return None
         try:
             # Use Supabase client to verify token
             # The client automatically validates JWT tokens
@@ -94,6 +97,8 @@ class AuthService:
             Session ID or None
         """
         if guest_session_id:
+            if not self.supabase.enabled:
+                return guest_session_id
             # Verify session exists and is not expired
             session = self.supabase.get_guest_session_by_id(guest_session_id)
             if session:
