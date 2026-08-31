@@ -143,17 +143,27 @@ class SupabaseService:
         response = client.table("subjects").insert(data).execute()
         return response.data[0] if response.data else None
     
+    def _is_valid_uuid(self, val: str) -> bool:
+        if not val:
+            return False
+        try:
+            import uuid
+            uuid.UUID(str(val))
+            return True
+        except (ValueError, AttributeError):
+            return False
+
     def delete_subject(self, subject_id: str):
-        """Delete a subject."""
-        if not self.enabled:
-            return []
+        """Delete a subject and its files."""
+        if not self.enabled or not self._is_valid_uuid(subject_id):
+            return None
         client = self._require_client()
         response = client.table("subjects").delete().eq("id", subject_id).execute()
         return response.data
     
     def get_file_by_hash(self, file_hash: str, subject_id: str):
         """Get file by hash to check for duplicates."""
-        if not self.enabled:
+        if not self.enabled or not self._is_valid_uuid(subject_id):
             return None
         client = self._require_client()
         response = client.table("files").select("*").eq("file_hash", file_hash).eq("subject_id", subject_id).execute()
@@ -163,13 +173,17 @@ class SupabaseService:
         """Create a file record."""
         if not self.enabled:
             return None
+        # Verify subject_id is valid uuid before inserting
+        subject_id = file_data.get("subject_id")
+        if not self._is_valid_uuid(subject_id):
+            return None
         client = self._require_client()
         response = client.table("files").insert(file_data).execute()
         return response.data[0] if response.data else None
     
     def update_file_status(self, file_id: str, status: str):
         """Update file processing status."""
-        if not self.enabled:
+        if not self.enabled or not self._is_valid_uuid(file_id):
             return None
         client = self._require_client()
         response = client.table("files").update({"status": status}).eq("id", file_id).execute()
@@ -177,7 +191,7 @@ class SupabaseService:
     
     def get_files_by_subject(self, subject_id: str):
         """Get all files for a subject."""
-        if not self.enabled:
+        if not self.enabled or not self._is_valid_uuid(subject_id):
             return []
         client = self._require_client()
         response = client.table("files").select("*").eq("subject_id", subject_id).execute()

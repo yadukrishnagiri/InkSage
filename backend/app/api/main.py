@@ -48,7 +48,7 @@ app.include_router(guest.router, prefix="/api/guest", tags=["guest"])
 app.include_router(cleanup.router, prefix="/api", tags=["cleanup"])
 app.include_router(user.router, prefix="/api/user", tags=["user"])
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     return {"status": "healthy"}
 
@@ -63,7 +63,7 @@ if frontend_dist.exists() and (frontend_dist / "index.html").exists():
     if (frontend_dist / "assets").exists():
         app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
 
-    @app.get("/{full_path:path}")
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
     async def serve_spa(full_path: str):
         # Allow API routes to be handled by routers
         if full_path.startswith("api/") or full_path == "health":

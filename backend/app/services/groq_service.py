@@ -11,12 +11,23 @@ class GroqService:
         Args:
             api_key: Groq API key (defaults to GROQ_API_KEY env var)
         """
-        self.api_key = api_key or os.getenv("GROQ_API_KEY")
-        if not self.api_key:
-            raise ValueError("GROQ_API_KEY not provided")
-        
-        self.client = Groq(api_key=self.api_key)
+        self.api_key = api_key or os.getenv("GROQ_API_KEY", "")
         self.model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+        self._client = None
+        if self.api_key:
+            try:
+                self._client = Groq(api_key=self.api_key)
+            except Exception:
+                pass
+
+    @property
+    def client(self):
+        if self._client is None:
+            key = self.api_key or os.getenv("GROQ_API_KEY", "")
+            if not key:
+                raise ValueError("GROQ_API_KEY not provided")
+            self._client = Groq(api_key=key)
+        return self._client
     
     def generate_response(
         self,

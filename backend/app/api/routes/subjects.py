@@ -13,6 +13,7 @@ _chromadb_service = ChromaDBService()
 _supabase = SupabaseService.get_instance()
 _auth = AuthService()
 
+@router.get("", response_model=List[Subject])
 @router.get("/", response_model=List[Subject])
 async def get_subjects(
     authorization: Optional[str] = Header(None),
@@ -33,6 +34,7 @@ async def get_subjects(
         print(f"Error fetching subjects: {e}")
         return []
 
+@router.post("", response_model=Subject)
 @router.post("/", response_model=Subject)
 async def create_subject(
     subject: SubjectCreate,

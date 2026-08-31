@@ -282,7 +282,7 @@ const App: React.FC = () => {
       console.error('Failed to create subject:', error);
       // Fallback to local creation
       const newSub: Subject = {
-        id: Date.now().toString(),
+        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '00000000-0000-4000-8000-' + Date.now().toString().slice(-12).padStart(12, '0'),
         name,
         color: 'bg-blue-100',
         files: []
