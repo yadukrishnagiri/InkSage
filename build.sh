@@ -10,6 +10,7 @@ cd ..
 
 echo "=== 2. Installing Backend Dependencies ==="
 cd backend
+python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 cd ..
 
