@@ -11,18 +11,17 @@ if not api_key:
     print("❌ GROQ_API_KEY not found in .env file")
     exit(1)
 
-print(f"✅ Found API key: {api_key[:20]}...")
+print(f"[OK] Found API key: {api_key[:20]}...")
 
 try:
     client = Groq(api_key=api_key)
     
-    # Test with a simple request - try multiple models
-    models_to_try = [
-        "llama-3.3-70b-versatile",
-        "llama3-70b-8192",
-        "llama-3.1-8b-instant",
-        "mixtral-8x7b-32768"
-    ]
+    # Dynamically list models available to this account
+    available_models = [m.id for m in client.models.list().data]
+    print(f"Available models for this key: {available_models}")
+    
+    current_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    models_to_try = [current_model] + [m for m in available_models if "whisper" not in m and "guard" not in m]
     
     working_model = None
     for model in models_to_try:
@@ -36,22 +35,20 @@ try:
                 max_tokens=10
             )
             working_model = model
-            print(f"✅ Model {model} works!")
+            print(f"[OK] Model {model} works!")
             print(f"Response: {response.choices[0].message.content}")
             break
         except Exception as e:
-            if "decommissioned" not in str(e).lower():
-                print(f"❌ Model {model} failed: {str(e)[:100]}")
+            print(f"[FAIL] Model {model} failed: {str(e)[:100]}")
             continue
     
     if not working_model:
         raise Exception("No working model found. Please check Groq documentation for available models.")
     
-    print(f"✅ API key is valid!")
-    print(f"Response: {response.choices[0].message.content}")
+    print(f"[SUCCESS] API key and model '{working_model}' are valid!")
 except Exception as e:
-    print(f"❌ API key test failed: {str(e)}")
+    print(f"[ERROR] API key test failed: {str(e)}")
     if "401" in str(e) or "Invalid API Key" in str(e):
-        print("   → Your API key is invalid. Please get a new one from https://console.groq.com/")
+        print("   -> Your API key is invalid. Please get a new one from https://console.groq.com/")
     exit(1)
 

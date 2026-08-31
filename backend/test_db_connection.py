@@ -17,8 +17,7 @@ def test_supabase_connection():
     
     # Check environment variables
     supabase_url = os.getenv("SUPABASE_URL")
-    # Use anon key (service key format not supported)
-    supabase_key = os.getenv("SUPABASE_KEY")
+    supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
     
     if not supabase_url:
         print("❌ ERROR: SUPABASE_URL not found in environment variables")

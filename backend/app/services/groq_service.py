@@ -16,7 +16,7 @@ class GroqService:
             raise ValueError("GROQ_API_KEY not provided")
         
         self.client = Groq(api_key=self.api_key)
-        self.model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        self.model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     
     def generate_response(
         self,
