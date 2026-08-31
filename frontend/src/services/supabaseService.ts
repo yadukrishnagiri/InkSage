@@ -3,23 +3,25 @@
  */
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const SUPABASE_DEFAULT_URL = 'https://aatnuqokeyofougubmxj.supabase.co';
+const SUPABASE_DEFAULT_ANON_KEY = 'sb_publishable_4-99QTWa60adk-jqhFoSdQ_1OmOJ5cz';
 
-// Only create client if both are provided, otherwise create with empty strings (will fail gracefully)
+export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || SUPABASE_DEFAULT_URL;
+export const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || SUPABASE_DEFAULT_ANON_KEY;
+
+// Create Supabase client with auth session persistence
 let supabase: SupabaseClient;
 try {
-  if (supabaseUrl && supabaseAnonKey) {
-    supabase = createClient(supabaseUrl, supabaseAnonKey);
-  } else {
-    // Create a dummy client to prevent errors (auth won't work but app will load)
-    supabase = createClient('https://placeholder.supabase.co', 'placeholder-key');
-    console.warn('⚠️ Supabase environment variables not set. Auth features will not work.');
-  }
+  supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    }
+  });
 } catch (error) {
   console.error('Error initializing Supabase client:', error);
-  // Create dummy client as fallback
-  supabase = createClient('https://placeholder.supabase.co', 'placeholder-key');
+  supabase = createClient(SUPABASE_DEFAULT_URL, SUPABASE_DEFAULT_ANON_KEY);
 }
 
 export { supabase };
@@ -94,7 +96,6 @@ export const authService = {
 
   onAuthStateChange(callback: (event: string, session: any) => void) {
     if (!supabaseUrl || !supabaseAnonKey) {
-      // Return a dummy subscription that does nothing
       return {
         data: {
           subscription: {
@@ -106,4 +107,3 @@ export const authService = {
     return supabase.auth.onAuthStateChange(callback);
   },
 };
-

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
-import { authService } from '../services/supabaseService';
+import { authService, supabaseUrl, supabaseAnonKey } from '../services/supabaseService';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -18,9 +18,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
 
   // Check if Supabase is configured
   useEffect(() => {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    setIsSupabaseConfigured(!!(supabaseUrl && supabaseKey));
+    setIsSupabaseConfigured(!!(supabaseUrl && supabaseAnonKey));
   }, []);
 
   if (!isOpen) return null;

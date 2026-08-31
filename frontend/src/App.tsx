@@ -14,7 +14,7 @@ import { DuplicateDetectionModal } from './components/DuplicateDetectionModal';
 import { StorageWarning } from './components/StorageWarning';
 import { AuthModal } from './components/AuthModal';
 import { SubjectNameModal } from './components/SubjectNameModal';
-import { authService } from './services/supabaseService';
+import { authService, supabaseUrl, supabaseAnonKey } from './services/supabaseService';
 
 // --- Main Component ---
 
@@ -117,11 +117,7 @@ const App: React.FC = () => {
 
   // Setup auth state listener
   useEffect(() => {
-    // Check if Supabase is configured
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    
-    if (!supabaseUrl || !supabaseKey) {
+    if (!supabaseUrl || !supabaseAnonKey) {
       console.warn('⚠️ Supabase not configured. Auth features disabled.');
       setIsLoadingAuth(false);
       return;

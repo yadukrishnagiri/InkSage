@@ -57,3 +57,11 @@ CREATE INDEX IF NOT EXISTS idx_files_file_hash ON files(file_hash);
 CREATE INDEX IF NOT EXISTS idx_chat_history_subject_id ON chat_history(subject_id);
 CREATE INDEX IF NOT EXISTS idx_guest_sessions_expires_at ON guest_sessions(expires_at);
 
+-- Disable Row Level Security (RLS) so backend and guest users can insert/query records
+ALTER TABLE users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE subjects DISABLE ROW LEVEL SECURITY;
+ALTER TABLE files DISABLE ROW LEVEL SECURITY;
+ALTER TABLE guest_sessions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_history DISABLE ROW LEVEL SECURITY;
+
+
