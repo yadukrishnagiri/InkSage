@@ -5,10 +5,9 @@ import sys
 from pathlib import Path
 
 # Add backend directory to sys.path
-backend_dir = Path(__file__).resolve().parent
+backend_dir = Path(__file__).resolve().parent / "backend"
 sys.path.insert(0, str(backend_dir))
 
-# Suppress pypdf deprecation warnings
 warnings.filterwarnings('ignore', category=DeprecationWarning, module='pypdf')
 
 if __name__ == "__main__":
