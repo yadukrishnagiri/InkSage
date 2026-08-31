@@ -1,18 +1,27 @@
-from sentence_transformers import SentenceTransformer
-from typing import List
+from typing import List, Optional
 import numpy as np
 
 class EmbeddingService:
+    _shared_model = None
+
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
         """
-        Initialize embedding service with sentence-transformers.
+        Initialize embedding service with lazy-loaded sentence-transformers.
         
         Args:
             model_name: Name of the sentence-transformers model (default: all-MiniLM-L6-v2)
         """
-        self.model = SentenceTransformer(model_name)
+        self.model_name = model_name
         self.dimension = 384  # all-MiniLM-L6-v2 produces 384-dimensional vectors
     
+    @property
+    def model(self):
+        """Lazy load and share a single model instance to conserve RAM."""
+        if EmbeddingService._shared_model is None:
+            from sentence_transformers import SentenceTransformer
+            EmbeddingService._shared_model = SentenceTransformer(self.model_name)
+        return EmbeddingService._shared_model
+
     def generate_embeddings(self, texts: List[str]) -> np.ndarray:
         """
         Generate embeddings for a list of texts.
@@ -41,4 +50,3 @@ class EmbeddingService:
         """
         embedding = self.model.encode([text], show_progress_bar=False)[0]
         return embedding
-
