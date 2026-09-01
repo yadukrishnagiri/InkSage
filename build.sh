@@ -4,6 +4,8 @@ set -o errexit
 
 echo "=== 1. Building React Frontend ==="
 cd frontend
+export VITE_SUPABASE_URL="${VITE_SUPABASE_URL:-$SUPABASE_URL}"
+export VITE_SUPABASE_ANON_KEY="${VITE_SUPABASE_ANON_KEY:-$SUPABASE_KEY}"
 npm install
 npm run build
 cd ..
