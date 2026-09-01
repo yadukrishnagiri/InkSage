@@ -17,5 +17,6 @@ if __name__ == "__main__":
         "app.api.main:app",
         host="0.0.0.0",
         port=port,
-        reload=False
+        reload=False,
+        timeout_keep_alive=60
     )

@@ -31,7 +31,7 @@ GUEST_UPLOAD_DIR = "./uploads/guest"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(GUEST_UPLOAD_DIR, exist_ok=True)
 
-async def process_file_background(
+def process_file_background(
     file_path: str,
     file_id: str,
     subject_id: str,
@@ -41,8 +41,9 @@ async def process_file_background(
     file_size: int,
     file_hash: str
 ):
-    """Background task to process file."""
+    """Background task to process file in a separate worker thread."""
     from app.services.supabase_service import SupabaseService
+    import gc
     supabase = SupabaseService.get_instance()
     
     # Update status to processing
@@ -51,22 +52,25 @@ async def process_file_background(
     except Exception as e:
         print(f"Error updating file status: {e}")
     
-    result = _file_processor.process_file(
-        file_path=file_path,
-        file_id=file_id,
-        subject_id=subject_id,
-        file_name=file_name,
-        file_extension=file_extension
-    )
-    
-    # Update file status in database
     try:
+        result = _file_processor.process_file(
+            file_path=file_path,
+            file_id=file_id,
+            subject_id=subject_id,
+            file_name=file_name,
+            file_extension=file_extension
+        )
         status = "processed" if result.get("status") == "processed" else "failed"
         supabase.update_file_status(file_id, status)
+        print(f"File {file_id} processed successfully: {status}")
     except Exception as e:
-        print(f"Error updating file status: {e}")
-    
-    print(f"File {file_id} processed: {result['status']}")
+        print(f"Error processing file {file_id}: {e}")
+        try:
+            supabase.update_file_status(file_id, "failed")
+        except Exception:
+            pass
+    finally:
+        gc.collect()
 
 @router.post("/upload", response_model=FileResponse)
 async def upload_file(
