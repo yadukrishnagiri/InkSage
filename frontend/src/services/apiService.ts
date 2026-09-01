@@ -2,10 +2,11 @@ import axios from 'axios';
 import { Message, NoteFile } from '../types';
 import { authService } from './supabaseService';
 
-const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:8000');
+const rawApiUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:8000');
+const API_URL = (rawApiUrl || '').replace(/\/+$/, '');
 
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: API_URL || '/',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -204,9 +205,19 @@ export const sendMessageToInkSageStream = async (
     
     callbacks.onComplete();
   } catch (error: any) {
-    console.error('Streaming Chat API Error:', error);
-    const errorMessage = error.message || "I encountered an error while analyzing your notes. Please check your backend configuration and try again.";
-    callbacks.onError(errorMessage);
+    console.warn('Streaming fetch failed, attempting standard chat query fallback:', error);
+    try {
+      const fallbackResponse = await sendMessageToInkSage(currentMessage, subjectId, chatHistory);
+      if (fallbackResponse.citations && fallbackResponse.citations.length > 0) {
+        callbacks.onCitations(fallbackResponse.citations);
+      }
+      callbacks.onChunk(fallbackResponse.text || '');
+      callbacks.onComplete();
+    } catch (fallbackError: any) {
+      console.error('Chat fallback also failed:', fallbackError);
+      const errorMessage = fallbackError.response?.data?.detail || fallbackError.message || "I encountered an error while analyzing your notes. Please check your backend configuration and try again.";
+      callbacks.onError(errorMessage);
+    }
   }
 };
 

@@ -33,8 +33,8 @@ if cors_origins_env:
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins if not cors_origins_env == "*" else ["*"],
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|.*\.vercel\.app|.*\.netlify\.app|.*\.onrender\.com)(:\d+)?$",
+    allow_origins=allowed_origins if cors_origins_env and cors_origins_env != "*" else allowed_origins,
+    allow_origin_regex=r"^https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
