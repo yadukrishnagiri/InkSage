@@ -197,6 +197,18 @@ async def upload_file(
         })
     except Exception as e:
         print(f"Error creating file record: {e}")
+
+    # Upload file binary to Supabase Storage bucket
+    try:
+        if supabase.enabled:
+            supabase.upload_file_to_storage(
+                bucket="notes",
+                path=storage_path,
+                file_content=file_content,
+                content_type=file.content_type or "application/octet-stream"
+            )
+    except Exception as e:
+        print(f"Warning: Supabase storage upload skipped/failed: {e}")
     
     # Process file in background
     background_tasks.add_task(
@@ -374,6 +386,18 @@ async def upload_multiple_files(
                 ))
                 failed += 1
                 continue
+
+            # Upload file binary to Supabase Storage bucket
+            try:
+                if supabase.enabled:
+                    supabase.upload_file_to_storage(
+                        bucket="notes",
+                        path=storage_path,
+                        file_content=file_content,
+                        content_type=file.content_type or "application/octet-stream"
+                    )
+            except Exception as e:
+                print(f"Warning: Supabase storage upload skipped/failed: {e}")
             
             # Process file in background
             background_tasks.add_task(
