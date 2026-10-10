@@ -1,316 +1,36 @@
-# InkSage - Private AI Study Workspace
+# InkSage
 
-A RAG-based private study workspace for students. Upload your notes, organize them by subject, and get AI-powered answers backed by exact citations from your content.
+InkSage is a local study workspace. Create a subject such as Chemistry or Maths, upload its text based PDFs, select that subject, and ask questions grounded in only those PDFs. Answers show PDF and page references.
 
-## Features
+This version has **no login and no database**. Subject metadata, uploaded PDFs, and extracted page text are stored under `local_data/` (ignored by Git). Chat history is kept in the current browser's local storage. Nothing is automatically deleted when a tab closes.
 
-- **Multi-file Support**: PDF, DOCX, PPTX, XLSX, XLS, CSV, TXT, MD
-- **Batch Upload**: Upload multiple files simultaneously
-- **Subject-based Organization**: Each subject has its own chat workspace
-- **Streaming Responses**: Real-time chat responses that appear as they're generated
-- **Proof-based Answers**: All answers include citations from your notes
-- **Hybrid Search**: Combines semantic (vector) and keyword (BM25) search
-- **Guest Mode**: Try without signing up (auto-deletes on close)
-- **User Authentication**: Sign up with email or Google OAuth
-- **Chat History Persistence**: Your conversations are saved and restored
-- **PDF Export**: Export chat conversations as PDF
-- **Storage Management**: 500MB storage limit for logged-in users with warnings
+## Run locally
 
-## Tech Stack
+Use Python 3.10+ and Node.js 18+.
 
-### Frontend
-- React 19.2.0 + Vite 6.2.0
-- TypeScript
-- Tailwind CSS
-- Lucide React (icons)
-
-### Backend
-- FastAPI (Python)
-- Groq API (LLM)
-- ChromaDB (Vector Database)
-- sentence-transformers (Embeddings)
-- langchain (Text Chunking)
-- Supabase (Auth, Database, Storage)
-
-## Project Structure
-
-```
-InkSage/
-├── frontend/          # React + Vite frontend
-│   ├── src/
-│   │   ├── components/
-│   │   ├── services/
-│   │   └── App.tsx
-│   └── package.json
-├── backend/           # FastAPI backend
-│   ├── app/
-│   │   ├── api/       # API routes
-│   │   ├── services/  # Business logic
-│   │   ├── models/    # Pydantic models
-│   │   └── utils/     # Utilities
-│   └── requirements.txt
-├── database/
-│   └── migrations/    # SQL migrations
-└── chroma_db/         # ChromaDB storage
-```
-
-## Setup
-
-### Prerequisites
-
-- Node.js 18+
-- Python 3.10+
-- Supabase account
-- Groq API key
-
-### Backend Setup
-
-1. Navigate to backend directory:
-```bash
+```powershell
 cd backend
-```
-
-2. Create virtual environment:
-```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+.\venv\Scripts\python.exe run.py
 ```
 
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+In a second terminal:
 
-4. Create `.env` file (copy from `.env.example`):
-```bash
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_KEY=your_supabase_service_key
-GROQ_API_KEY=your_groq_api_key
-GROQ_MODEL=llama-3.3-70b-versatile
-CHROMADB_PATH=./chroma_db
-```
-
-5. Run database migrations in Supabase SQL editor (see `database/migrations/001_initial_schema.sql`)
-
-6. Start the server:
-```bash
-python run.py
-```
-
-Backend will run on `http://localhost:8000`
-
-### Frontend Setup
-
-1. Navigate to frontend directory:
-```bash
+```powershell
 cd frontend
-```
-
-2. Install dependencies:
-```bash
 npm install
-```
-
-3. Create `.env.local` file (copy from `.env.local.example`):
-```bash
-VITE_API_URL=http://localhost:8000
-VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-```
-
-4. Start development server:
-```bash
 npm run dev
 ```
 
-Frontend will run on `http://localhost:5173` (Vite default port)
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000). The landing page opens on every visit; choose **Start studying** to resume your local workspace. Create a subject, upload its PDFs, and ask questions in that subject. The frontend proxies API calls to the local backend on port 8000. You can also run `npm run build` and serve the built app from the backend on [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
-## Usage
+For generated AI answers, put `GROQ_API_KEY=...` in `backend/.env`. Optionally set `GROQ_MODEL`. Without a key, chat returns matching passages from the selected subject so the upload and retrieval flow can be tested offline. A Groq key sends selected PDF excerpts and the question to Groq; do not set it if that transfer is unwanted.
 
-1. Start both backend and frontend servers
-2. Open `http://localhost:5173` in your browser
-3. Click "Try Guest Mode" or sign up with email/Google
-4. Create a subject (click "New Subject" button)
-5. Upload files - you can select multiple files at once!
-6. Wait for files to process (status shown in file list)
-7. Start chatting with your notes - responses stream in real-time!
-8. Your chat history is automatically saved and restored
+## Scope and limits
 
-## API Endpoints
-
-### Files
-- `POST /api/files/upload` - Upload a single file
-- `POST /api/files/upload-multiple` - Upload multiple files at once
-- `GET /api/files/{file_id}/status` - Get file processing status
-- `DELETE /api/files/{file_id}` - Delete a file
-
-### Subjects
-- `GET /api/subjects` - List subjects
-- `POST /api/subjects` - Create subject
-- `DELETE /api/subjects/{subject_id}` - Delete subject
-
-### Chat
-- `POST /api/chat/query` - Send query to RAG system (non-streaming)
-- `POST /api/chat/query-stream` - Send query with streaming response (SSE)
-- `POST /api/chat/export-pdf` - Export chat as PDF
-
-### Guest
-- `POST /api/guest/session` - Create guest session
-- `GET /api/guest/session/{session_id}` - Get session info
-
-### User
-- `GET /api/user/storage` - Get storage usage for logged-in users
-
-## Development
-
-### Backend
-- Main entry: `backend/run.py`
-- API routes: `backend/app/api/routes/`
-- Services: `backend/app/services/`
-
-### Frontend
-- Main component: `frontend/src/App.tsx`
-- API service: `frontend/src/services/apiService.ts`
-
-## Testing Connections
-
-### Test Database Connection
-
-```bash
-cd backend
-python test_db_connection.py
-```
-
-This will test your Supabase database connection and verify tables are accessible.
-
-### Test Groq API Key
-
-```bash
-cd backend
-python test_groq_key.py
-```
-
-This will verify your Groq API key is valid and test the model connection.
-
-### Test API Connection
-
-First, make sure the backend is running:
-```bash
-cd backend
-python run.py
-```
-
-Then in another terminal:
-```bash
-cd backend
-python test_api_connection.py
-```
-
-### Run All Tests
-
-```bash
-cd backend
-python run_tests.py
-```
-
-### Frontend Connection Test
-
-Open `frontend/test-connection.html` in your browser to test:
-- Environment variables
-- Backend API connection
-- Supabase connection
-- Full integration
-
-## Environment Variables
-
-### Backend (.env)
-```env
-SUPABASE_URL=your_supabase_project_url
-SUPABASE_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_KEY=your_supabase_service_role_key
-GROQ_API_KEY=your_groq_api_key
-GROQ_MODEL=llama-3.3-70b-versatile
-CHROMADB_PATH=./chroma_db
-```
-
-### Frontend (.env.local)
-```env
-VITE_API_URL=http://localhost:8000
-VITE_SUPABASE_URL=your_supabase_project_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-```
-
-## Getting API Keys
-
-### Groq API Key
-1. Go to https://console.groq.com/
-2. Sign up or log in
-3. Navigate to API Keys section
-4. Create a new API key
-5. Copy and add to `backend/.env` as `GROQ_API_KEY`
-
-### Supabase Keys
-1. Go to https://supabase.com/
-2. Create a new project or use existing
-3. Go to Project Settings > API
-4. Copy:
-   - Project URL → `SUPABASE_URL`
-   - anon/public key → `SUPABASE_KEY` (frontend) and `SUPABASE_KEY` (backend)
-   - service_role key → `SUPABASE_SERVICE_KEY` (backend only)
-
-## Performance Optimizations
-
-- **Streaming Responses**: Chat responses stream in real-time for faster perceived performance
-- **Optimized Context**: Reduced context size (top_k=7) for faster processing
-- **Token Limits**: Optimized max_tokens (1024) for faster generation
-- **Context Limiting**: Automatic context length limiting to prevent oversized prompts
-
-## Troubleshooting
-
-### Backend Issues
-
-**"Invalid API Key" error:**
-- Verify your `GROQ_API_KEY` in `backend/.env` is correct
-- Make sure the backend server is restarted after updating `.env`
-- Test the key with: `python backend/test_groq_key.py`
-
-**"Model decommissioned" error:**
-- Update `GROQ_MODEL` in `backend/.env` to `llama-3.3-70b-versatile`
-- Check Groq documentation for current available models
-
-**Database connection errors:**
-- Verify Supabase credentials in `backend/.env`
-- Run `python backend/test_db_connection.py` to diagnose
-- Ensure database migrations are run in Supabase SQL editor
-
-**Foreign key constraint errors:**
-- User records are automatically created when needed
-- If you see "user_id not present in users table", the system will auto-create the user
-
-### Frontend Issues
-
-**White screen on load:**
-- Check browser console (F12) for errors
-- Verify `.env.local` exists in `frontend/` directory
-- Ensure all environment variables are set correctly
-
-**API connection errors:**
-- Verify backend is running on `http://localhost:8000`
-- Check `VITE_API_URL` in `frontend/.env.local`
-- Test connection with `frontend/test-connection.html`
-
-**Streaming not working:**
-- Ensure backend is running latest version with streaming endpoint
-- Check browser console for SSE connection errors
-- Verify CORS is configured correctly in `backend/app/api/main.py`
-
-**Chat history not persisting:**
-- Chat history is stored in localStorage per user/guest
-- Logged-in users: history persists across sessions
-- Guest users: history persists until browser cache is cleared
-
-## License
-
-MIT
-
+- PDF only, up to 20 MB and 300 pages per file. PDFs need selectable text; scanned pages need OCR before upload.
+- Retrieval uses local keyword overlap. It is intentionally lightweight for local testing and may miss semantic matches or synonyms.
+- The server binds to `127.0.0.1`; local files are not protected by accounts. Do not expose this API to a network.
+- Deleting a subject deletes its PDFs and extracted text. Deleting a PDF deletes its extracted text too.
+- The old Supabase and ChromaDB modules remain in the repository for reference but are not loaded by the active app. Existing `uploads/`, `chroma_db/`, and remote Supabase data were not deleted or migrated.

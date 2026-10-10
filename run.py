@@ -15,7 +15,7 @@ if __name__ == "__main__":
     print(f"Starting InkSage server on port {port}...")
     uvicorn.run(
         "app.api.main:app",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=port,
         reload=False,
         timeout_keep_alive=60

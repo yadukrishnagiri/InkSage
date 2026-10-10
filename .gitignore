@@ -82,6 +82,7 @@ backend/chroma_db/
 # File Uploads & Local User Data
 # ==============================================================================
 uploads/
+local_data/
 backend/uploads/
 *.pdf
 *.docx

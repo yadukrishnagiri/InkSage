@@ -1,0 +1,6 @@
+{
+  "name": "InkSage campus",
+  "fonts": { "display": "Bricolage Grotesque Variable", "body": "DM Sans Variable" },
+  "colors": { "ink": "#211b38", "canvas": "#faf9f5", "violet": "#7150d8", "gold": "#f6c570", "coral": "#f47e76", "mint": "#51b784" },
+  "motion": { "style": "expressive but task-focused", "reducedMotion": true }
+}
