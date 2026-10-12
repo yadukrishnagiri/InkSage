@@ -34,7 +34,8 @@ def test_subject_pdf_chat_lifecycle():
 
         answer = client.post("/api/chat/query", json={"subject_id": chemistry["id"], "query": "What is the atomic number of sodium?"}).json()
         assert "eleven" in answer["text"]
-        assert "atoms.pdf, page 1" in answer["citations"]
+        assert answer["citations"][0]["label"] == "atoms.pdf, page 1"
+        assert "eleven" in answer["citations"][0]["excerpt"]
         other = client.post("/api/chat/query", json={"subject_id": maths["id"], "query": "What is the atomic number of sodium?"}).json()
         assert not other["citations"]
 

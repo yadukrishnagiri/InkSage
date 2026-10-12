@@ -9,6 +9,17 @@
 * {
   box-sizing: border-box;
 }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 html {
   scroll-behavior: smooth;
 }
@@ -1234,6 +1245,48 @@ button:disabled {
 .chat-header p {
   margin: 2px 0 0;
 }
+.thread-bar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 13px;
+  background: #faf8fd;
+  border-bottom: 1px solid #eee9f1;
+}
+.thread-bar label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: 1;
+  color: #7253c7;
+}
+.thread-bar select {
+  min-width: 0;
+  width: 100%;
+  padding: 7px 28px 7px 8px;
+  color: #433653;
+  background: #fff;
+  border: 1px solid #ddd5e7;
+  border-radius: 8px;
+  font: 750 11px "DM Sans Variable", sans-serif;
+  text-overflow: ellipsis;
+}
+.thread-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 10px;
+  color: #fff;
+  background: #7150d8;
+  border: 0;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+.thread-bar button:hover:not(:disabled) { background: #5d3cc0; }
+.thread-bar button:disabled { opacity: .55; }
 .chat-status {
   margin-left: auto;
   color: #40986b;
@@ -1348,10 +1401,13 @@ button:disabled {
   align-items: center;
   gap: 11px;
   padding: 12px 10px;
+  min-height: 56px;
+  border-radius: 12px;
+  background: #faf8ff;
 }
 .book-loader {
-  width: 46px;
-  height: 34px;
+  width: 54px;
+  height: 40px;
   position: relative;
   flex: none;
   perspective: 120px;
@@ -1359,8 +1415,8 @@ button:disabled {
 .book-half {
   position: absolute;
   top: 4px;
-  width: 22px;
-  height: 26px;
+  width: 26px;
+  height: 32px;
   background: linear-gradient(135deg, #fff 0 80%, #e8defd 80%);
   border: 2px solid #7654d2;
   box-shadow: 0 4px 8px #4e347423;
@@ -1378,23 +1434,25 @@ button:disabled {
 .book-turning-page {
   position: absolute;
   z-index: 2;
-  top: 5px;
-  left: 23px;
-  width: 20px;
-  height: 24px;
+  top: 6px;
+  left: 27px;
+  width: 24px;
+  height: 29px;
   background: linear-gradient(90deg, #f0e9ff, #fff);
   border: 1.5px solid #8f71dd;
   border-left: 0;
   border-radius: 0 5px 6px 0;
   transform-origin: left center;
-  animation: book-flip 1.15s cubic-bezier(.55,.08,.45,.95) infinite;
+  animation: book-flip 1.35s cubic-bezier(.55,.08,.45,.95) infinite;
 }
+.book-turning-page.page-two { animation-delay: .45s; }
+.book-turning-page.page-three { animation-delay: .9s; }
 .book-spine {
   position: absolute;
   z-index: 3;
   top: 5px;
   bottom: 3px;
-  left: 22px;
+  left: 26px;
   width: 2px;
   border-radius: 2px;
   background: #6040b7;
@@ -1410,6 +1468,15 @@ button:disabled {
 .thinking-copy small {
   color: #9186a1;
   font-size: 10px;
+}
+.thinking-percent {
+  margin-left: auto;
+  min-width: 42px;
+  color: #6040b7;
+  font-family: "Bricolage Grotesque Variable", serif;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 @keyframes book-flip {
   0%, 12% { transform: rotateY(0deg); opacity: 1; }
@@ -1463,7 +1530,13 @@ button:disabled {
 }
 .pdf-preview p { margin: 0; color: #81788c; font-size: 12px; }
 .pdf-frame-wrap { position: relative; flex: 1; min-height: 0; background: #f3f0f7; }
-.pdf-frame-wrap iframe { width: 100%; height: 100%; border: 0; }
+.highlighted-page {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #77717e;
+}
 .page-highlight {
   position: absolute;
   top: 12px;

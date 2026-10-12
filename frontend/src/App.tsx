@@ -12,6 +12,7 @@ import {
   FolderPlus,
   Menu,
   MessageCircle,
+  MessagesSquare,
   Plus,
   Send,
   Sparkles,
@@ -23,12 +24,16 @@ import "./styles.css";
 
 type Pdf = { id: string; name: string; pages: number; size: number };
 type Subject = { id: string; name: string; created_at: string; files: Pdf[] };
+type Citation =
+  | string
+  | { label: string; file: string; page: number; excerpt: string };
 type Message = {
   role: "user" | "assistant";
   text: string;
-  citations?: string[];
+  citations?: Citation[];
   mode?: string;
 };
+type ChatThread = { id: string; title: string; createdAt: string };
 type DialogState =
   | { kind: "create" }
   | { kind: "deleteSubject"; subject: Subject }
@@ -40,8 +45,12 @@ type UploadState = {
   status: "uploading" | "done" | "error";
   detail?: string;
 };
-type PreviewState = { file: Pdf; page: number } | null;
+type PreviewState = { file: Pdf; page: number; excerpt: string } | null;
 const tones = ["coral", "violet", "lime", "sky", "yellow"];
+
+function makeThread(title = "New chat"): ChatThread {
+  return { id: crypto.randomUUID(), title, createdAt: new Date().toISOString() };
+}
 
 function answerText(text: string) {
   return text
@@ -428,6 +437,8 @@ export default function App() {
   const [view, setView] = useState<"landing" | "workspace">("landing");
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [threads, setThreads] = useState<Record<string, ChatThread[]>>({});
+  const [activeThreads, setActiveThreads] = useState<Record<string, string>>({});
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -448,8 +459,11 @@ export default function App() {
   const sidebarCloseRef = useRef<HTMLButtonElement>(null);
   const menuWasOpen = useRef(false);
   const active = subjects.find((subject) => subject.id === activeId);
-  const chat = activeId ? messages[activeId] || [] : [];
-  const question = activeId ? drafts[activeId] || "" : "";
+  const activeThreadId = activeId
+    ? activeThreads[activeId] || threads[activeId]?.[0]?.id || null
+    : null;
+  const chat = activeThreadId ? messages[activeThreadId] || [] : [];
+  const question = activeThreadId ? drafts[activeThreadId] || "" : "";
 
   async function refresh() {
     const next = await request<Subject[]>("/api/subjects");
@@ -465,14 +479,43 @@ export default function App() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
     try {
-      setMessages(JSON.parse(localStorage.getItem("inksage-chat") || "{}"));
+      const savedThreads = JSON.parse(localStorage.getItem("inksage-threads") || "{}");
+      const savedMessages = JSON.parse(localStorage.getItem("inksage-thread-messages") || "{}");
+      const savedActive = JSON.parse(localStorage.getItem("inksage-active-threads") || "{}");
+      if (Object.keys(savedThreads).length) {
+        setThreads(savedThreads);
+        setMessages(savedMessages);
+        setActiveThreads(savedActive);
+      } else {
+        const legacy = JSON.parse(localStorage.getItem("inksage-chat") || "{}");
+        const migratedThreads: Record<string, ChatThread[]> = {};
+        const migratedMessages: Record<string, Message[]> = {};
+        const migratedActive: Record<string, string> = {};
+        Object.entries(legacy).forEach(([subjectId, value]) => {
+          const thread = makeThread("Previous chat");
+          migratedThreads[subjectId] = [thread];
+          migratedMessages[thread.id] = value as Message[];
+          migratedActive[subjectId] = thread.id;
+        });
+        setThreads(migratedThreads);
+        setMessages(migratedMessages);
+        setActiveThreads(migratedActive);
+      }
     } catch {
-      /* ignore */
+      /* Start with clean local chat history if stored data is malformed. */
     }
   }, []);
   useEffect(() => {
-    localStorage.setItem("inksage-chat", JSON.stringify(messages));
-  }, [messages]);
+    localStorage.setItem("inksage-threads", JSON.stringify(threads));
+    localStorage.setItem("inksage-thread-messages", JSON.stringify(messages));
+    localStorage.setItem("inksage-active-threads", JSON.stringify(activeThreads));
+  }, [threads, messages, activeThreads]);
+  useEffect(() => {
+    if (!activeId || threads[activeId]?.length) return;
+    const thread = makeThread();
+    setThreads((previous) => ({ ...previous, [activeId]: [thread] }));
+    setActiveThreads((previous) => ({ ...previous, [activeId]: thread.id }));
+  }, [activeId, threads]);
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat.length, busy]);
@@ -514,11 +557,27 @@ export default function App() {
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "instant" });
   }
-  function openCitation(citation: string) {
-    const match = citation.match(/^(.*), page (\d+)$/i);
-    if (!match || !active) return;
-    const file = active.files.find((item) => item.name === match[1]);
-    if (file) setPreview({ file, page: Number(match[2]) });
+  function openCitation(citation: Citation, answer: string) {
+    if (!active) return;
+    if (typeof citation === "string") {
+      const match = citation.match(/^(.*), page (\d+)$/i);
+      if (!match) return;
+      const file = active.files.find((item) => item.name === match[1]);
+      if (file) setPreview({ file, page: Number(match[2]), excerpt: answer });
+      return;
+    }
+    const file = active.files.find((item) => item.name === citation.file);
+    if (file) setPreview({ file, page: citation.page, excerpt: citation.excerpt });
+  }
+  function createChat() {
+    if (!activeId) return;
+    const thread = makeThread();
+    setThreads((previous) => ({
+      ...previous,
+      [activeId]: [thread, ...(previous[activeId] || [])],
+    }));
+    setActiveThreads((previous) => ({ ...previous, [activeId]: thread.id }));
+    setError("");
   }
   async function createSubject(name: string) {
     setDialogWorking(true);
@@ -545,14 +604,25 @@ export default function App() {
         await request(`/api/subjects/${dialog.subject.id}`, {
           method: "DELETE",
         });
-        setMessages((previous) => {
+        const removedThreadIds = (threads[dialog.subject.id] || []).map((thread) => thread.id);
+        setThreads((previous) => {
           const next = { ...previous };
           delete next[dialog.subject.id];
           return next;
         });
-        setDrafts((previous) => {
+        setActiveThreads((previous) => {
           const next = { ...previous };
           delete next[dialog.subject.id];
+          return next;
+        });
+        setMessages((previous) => {
+          const next = { ...previous };
+          removedThreadIds.forEach((threadId) => delete next[threadId]);
+          return next;
+        });
+        setDrafts((previous) => {
+          const next = { ...previous };
+          removedThreadIds.forEach((threadId) => delete next[threadId]);
           return next;
         });
       } else {
@@ -621,19 +691,30 @@ export default function App() {
   async function send() {
     const text = question.trim();
     const subjectId = activeId;
-    if (!subjectId || !text || !active?.files.length || busy) return;
-    setDrafts((previous) => ({ ...previous, [subjectId]: "" }));
+    const threadId = activeThreadId;
+    if (!subjectId || !threadId || !text || !active?.files.length || busy) return;
+    setDrafts((previous) => ({ ...previous, [threadId]: "" }));
     setError("");
     setBusy(true);
     setAnswering(true);
+    if (!(messages[threadId] || []).length) {
+      setThreads((previous) => ({
+        ...previous,
+        [subjectId]: (previous[subjectId] || []).map((thread) =>
+          thread.id === threadId
+            ? { ...thread, title: text.length > 42 ? `${text.slice(0, 42)}…` : text }
+            : thread,
+        ),
+      }));
+    }
     setMessages((previous) => ({
       ...previous,
-      [subjectId]: [...(previous[subjectId] || []), { role: "user", text }],
+      [threadId]: [...(previous[threadId] || []), { role: "user", text }],
     }));
     try {
       const answer = await request<{
         text: string;
-        citations: string[];
+        citations: Citation[];
         mode: string;
       }>("/api/chat/query", {
         method: "POST",
@@ -642,8 +723,8 @@ export default function App() {
       });
       setMessages((previous) => ({
         ...previous,
-        [subjectId]: [
-          ...(previous[subjectId] || []),
+        [threadId]: [
+          ...(previous[threadId] || []),
           { role: "assistant", ...answer },
         ],
       }));
@@ -652,9 +733,9 @@ export default function App() {
     } catch (e) {
       setMessages((previous) => ({
         ...previous,
-        [subjectId]: (previous[subjectId] || []).slice(0, -1),
+        [threadId]: (previous[threadId] || []).slice(0, -1),
       }));
-      setDrafts((previous) => ({ ...previous, [subjectId]: text }));
+      setDrafts((previous) => ({ ...previous, [threadId]: text }));
       setError((e as Error).message);
     } finally {
       setAnswering(false);
@@ -868,7 +949,7 @@ export default function App() {
                         >
                           <Plus size={17} /> Add PDFs
                         </button>
-                        <small>Text based PDFs · up to 20 MB each</small>
+                        <small>PDFs up to 20 MB · scanned pages supported</small>
                         <input
                           ref={uploadRef}
                           type="file"
@@ -960,6 +1041,31 @@ export default function App() {
                               : "Add a PDF"}
                         </span>
                       </div>
+                      <div className="thread-bar">
+                        <label>
+                          <MessagesSquare size={15} />
+                          <span className="sr-only">Current chat</span>
+                          <select
+                            value={activeThreadId || ""}
+                            onChange={(event) =>
+                              setActiveThreads((previous) => ({
+                                ...previous,
+                                [active.id]: event.target.value,
+                              }))
+                            }
+                            aria-label="Choose a chat"
+                          >
+                            {(threads[active.id] || []).map((thread) => (
+                              <option key={thread.id} value={thread.id}>
+                                {thread.title}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <button type="button" onClick={createChat} disabled={busy}>
+                          <Plus size={15} /> New chat
+                        </button>
+                      </div>
                       <div
                         className="conversation"
                         role="log"
@@ -1007,11 +1113,13 @@ export default function App() {
                                       <button
                                         key={citationIndex}
                                         type="button"
-                                        onClick={() => openCitation(citation)}
+                                        onClick={() => openCitation(citation, message.text)}
                                         title="Open this page in the PDF"
                                       >
                                         <FileText size={13} />
-                                        {citation}
+                                        {typeof citation === "string"
+                                          ? citation
+                                          : citation.label}
                                       </button>
                                     ),
                                   )}
@@ -1021,17 +1129,20 @@ export default function App() {
                           </div>
                         ))}
                         {answering && (
-                          <div className="thinking">
+                          <div className="thinking" role="status" aria-live="polite">
                             <div className="book-loader" aria-hidden="true">
                               <span className="book-half book-left" />
                               <span className="book-half book-right" />
-                              <span className="book-turning-page" />
+                              <span className="book-turning-page page-one" />
+                              <span className="book-turning-page page-two" />
+                              <span className="book-turning-page page-three" />
                               <span className="book-spine" />
                             </div>
                             <div className="thinking-copy">
                               <strong>Finding it in your notes…</strong>
-                              <small>Reading the right pages · {answerProgress}%</small>
+                              <small>Reading the right pages</small>
                             </div>
+                            <strong className="thinking-percent">{answerProgress}%</strong>
                           </div>
                         )}
                         <div ref={bottomRef} />
@@ -1043,7 +1154,7 @@ export default function App() {
                             onChange={(event) =>
                               setDrafts((previous) => ({
                                 ...previous,
-                                [active.id]: event.target.value,
+                                [activeThreadId || active.id]: event.target.value,
                               }))
                             }
                             onKeyDown={(event) => {
@@ -1103,8 +1214,12 @@ export default function App() {
               <button className="dialog-close" onClick={() => setPreview(null)} aria-label="Close PDF preview"><X size={19} /></button>
             </header>
             <div className="pdf-frame-wrap">
-              <iframe title={`${preview.file.name}, page ${preview.page}`} src={`/api/subjects/${active.id}/files/${preview.file.id}/preview#page=${preview.page}`} />
-              <div className="page-highlight" aria-hidden="true">Cited page {preview.page}</div>
+              <img
+                className="highlighted-page"
+                alt={`Page ${preview.page} from ${preview.file.name}, with the supporting passage highlighted`}
+                src={`/api/subjects/${active.id}/files/${preview.file.id}/highlight/${preview.page}?excerpt=${encodeURIComponent(preview.excerpt)}`}
+              />
+              <div className="page-highlight" aria-hidden="true">Highlighted source · page {preview.page}</div>
             </div>
           </section>
         </div>
