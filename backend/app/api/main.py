@@ -17,6 +17,38 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from pypdf import PdfReader
 
+
+def extract_pages_with_ocr(content: bytes, page_count: int) -> list[dict]:
+    """Render image-only pages and extract text with the locally installed Tesseract."""
+    try:
+        import pypdfium2 as pdfium
+        import pytesseract
+        if os.name == "nt" and not shutil.which("tesseract"):
+            for candidate in (
+                Path(os.getenv("ProgramFiles", "C:/Program Files")) / "Tesseract-OCR" / "tesseract.exe",
+                Path(os.getenv("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Tesseract-OCR" / "tesseract.exe",
+            ):
+                if candidate.is_file():
+                    pytesseract.pytesseract.tesseract_cmd = str(candidate)
+                    break
+    except ImportError as exc:
+        raise RuntimeError("OCR dependencies are not installed") from exc
+
+    try:
+        document = pdfium.PdfDocument(content)
+        pages = []
+        for index in range(page_count):
+            page = document[index]
+            bitmap = page.render(scale=2.0)
+            image = bitmap.to_pil()
+            text = pytesseract.image_to_string(image).strip()
+            pages.append({"page": index + 1, "text": text})
+            page.close()
+        document.close()
+        return pages
+    except Exception as exc:
+        raise RuntimeError("Tesseract OCR is not installed or could not process this PDF") from exc
+
 load_dotenv()
 ROOT = Path(__file__).resolve().parents[3]
 DATA = Path(os.getenv("INKSAGE_DATA_DIR", ROOT / "local_data")).resolve()
@@ -101,14 +133,21 @@ async def upload_pdf(subject_id: str, file: UploadFile = File(...)):
         pages = [{"page": n, "text": (page.extract_text() or "").strip()} for n, page in enumerate(reader.pages, 1)]
     except Exception:
         raise HTTPException(400, "Could not read PDF. Check that it is valid and not encrypted")
+    ocr_used = False
     if not any(page["text"] for page in pages):
-        raise HTTPException(400, "No selectable text found. Scanned PDFs need OCR first")
+        try:
+            pages = extract_pages_with_ocr(content, len(reader.pages))
+            ocr_used = any(page["text"] for page in pages)
+        except RuntimeError:
+            raise HTTPException(422, "This PDF has no embedded text. Install Tesseract OCR locally, then upload it again.")
+        if not ocr_used:
+            raise HTTPException(422, "OCR could not find readable text in this PDF")
     with LOCK:
         path = subject_dir(subject_id)
         if any(item["name"].casefold() == name.casefold() for item in files(path)):
             raise HTTPException(409, "A PDF with this name is already in this subject")
         file_id = str(uuid.uuid4())
-        info = {"id": file_id, "name": name, "pages": len(pages), "size": len(content)}
+        info = {"id": file_id, "name": name, "pages": len(pages), "size": len(content), "ocr": ocr_used}
         (path / f"{file_id}.pdf").write_bytes(content)
         write(path / f"{file_id}.json", info)
         write(path / f"{file_id}.pages", pages)
