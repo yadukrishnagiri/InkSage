@@ -3,6 +3,7 @@ import importlib
 import io
 import os
 import tempfile
+import uuid
 
 from fastapi.testclient import TestClient
 from reportlab.pdfgen import canvas
@@ -27,8 +28,11 @@ def test_subject_pdf_chat_lifecycle():
         chemistry = client.post("/api/subjects", json={"name": "Chemistry"}).json()
         maths = client.post("/api/subjects", json={"name": "Maths"}).json()
         assert len(client.get("/api/subjects").json()) == 2
-        upload = client.post(f"/api/subjects/{chemistry['id']}/files", files={"file": ("atoms.pdf", pdf_with_text("Sodium has atomic number eleven."), "application/pdf")})
+        progress_id = str(uuid.uuid4())
+        upload = client.post(f"/api/subjects/{chemistry['id']}/files?progress_id={progress_id}", files={"file": ("atoms.pdf", pdf_with_text("Sodium has atomic number eleven."), "application/pdf")})
         assert upload.status_code == 201, upload.text
+        progress = client.get(f"/api/uploads/{progress_id}/progress").json()
+        assert progress == {"phase": "extracting", "done": 1, "total": 1}, progress
         file_id = upload.json()["id"]
         assert client.post(f"/api/subjects/{chemistry['id']}/files", files={"file": ("atoms.pdf", pdf_with_text("Sodium has atomic number eleven."), "application/pdf")}).status_code == 409
 

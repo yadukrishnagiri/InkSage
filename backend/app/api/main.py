@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,11 +15,12 @@ from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from pypdf import PdfReader
 
 
-def extract_pages_with_ocr(content: bytes, page_count: int) -> list[dict]:
+def extract_pages_with_ocr(content: bytes, page_count: int, report=None) -> list[dict]:
     """Render image-only pages and extract text with the locally installed Tesseract."""
     try:
         import pypdfium2 as pdfium
@@ -43,6 +45,8 @@ def extract_pages_with_ocr(content: bytes, page_count: int) -> list[dict]:
             image = bitmap.to_pil()
             text = pytesseract.image_to_string(image).strip()
             pages.append({"page": index + 1, "text": text})
+            if report:
+                report("ocr", index + 1, page_count)
             page.close()
         document.close()
         return pages
@@ -54,6 +58,7 @@ ROOT = Path(__file__).resolve().parents[3]
 DATA = Path(os.getenv("INKSAGE_DATA_DIR", ROOT / "local_data")).resolve()
 DATA.mkdir(parents=True, exist_ok=True)
 LOCK = threading.RLock()
+UPLOAD_PROGRESS: dict[str, dict] = {}
 app = FastAPI(title="InkSage Local API")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"], allow_methods=["GET", "POST", "DELETE"], allow_headers=["Content-Type"])
 
@@ -143,8 +148,44 @@ def delete_subject(subject_id: str):
         shutil.rmtree(subject_dir(subject_id))
     return {"ok": True}
 
+@app.get("/api/uploads/{progress_id}/progress")
+def upload_progress(progress_id: str):
+    try:
+        progress_id = str(uuid.UUID(progress_id))
+    except ValueError:
+        raise HTTPException(400, "Invalid upload ID")
+    with LOCK:
+        state = UPLOAD_PROGRESS.get(progress_id)
+        if not state:
+            raise HTTPException(404, "Upload progress is not available")
+        return {key: state[key] for key in ("phase", "done", "total")}
+
+def parse_pdf_pages(content: bytes, report) -> tuple[list[dict], bool]:
+    try:
+        reader = PdfReader(io.BytesIO(content), strict=True)
+        if reader.is_encrypted or len(reader.pages) > 300:
+            raise ValueError("Encrypted PDFs and PDFs over 300 pages are not supported")
+        total = len(reader.pages)
+        report("extracting", 0, total)
+        pages = []
+        for number, page in enumerate(reader.pages, 1):
+            pages.append({"page": number, "text": (page.extract_text() or "").strip()})
+            report("extracting", number, total)
+    except Exception:
+        raise HTTPException(400, "Could not read PDF. Check that it is valid and not encrypted")
+    if any(page["text"] for page in pages):
+        return pages, False
+    report("ocr", 0, total)
+    try:
+        pages = extract_pages_with_ocr(content, total, report)
+    except RuntimeError:
+        raise HTTPException(422, "This PDF has no embedded text. Install Tesseract OCR locally, then upload it again.")
+    if not any(page["text"] for page in pages):
+        raise HTTPException(422, "OCR could not find readable text in this PDF")
+    return pages, True
+
 @app.post("/api/subjects/{subject_id}/files", status_code=201)
-async def upload_pdf(subject_id: str, file: UploadFile = File(...)):
+async def upload_pdf(subject_id: str, file: UploadFile = File(...), progress_id: str | None = Query(default=None)):
     subject_dir(subject_id)
     name = Path(file.filename or "").name.strip()
     if not name.lower().endswith(".pdf") or len(name) > 180:
@@ -154,22 +195,24 @@ async def upload_pdf(subject_id: str, file: UploadFile = File(...)):
         raise HTTPException(413, "PDF must be 20 MB or smaller")
     if not content.startswith(b"%PDF-"):
         raise HTTPException(400, "This file is not a PDF")
-    try:
-        reader = PdfReader(io.BytesIO(content), strict=True)
-        if reader.is_encrypted or len(reader.pages) > 300:
-            raise ValueError("Encrypted PDFs and PDFs over 300 pages are not supported")
-        pages = [{"page": n, "text": (page.extract_text() or "").strip()} for n, page in enumerate(reader.pages, 1)]
-    except Exception:
-        raise HTTPException(400, "Could not read PDF. Check that it is valid and not encrypted")
-    ocr_used = False
-    if not any(page["text"] for page in pages):
+    if progress_id:
         try:
-            pages = extract_pages_with_ocr(content, len(reader.pages))
-            ocr_used = any(page["text"] for page in pages)
-        except RuntimeError:
-            raise HTTPException(422, "This PDF has no embedded text. Install Tesseract OCR locally, then upload it again.")
-        if not ocr_used:
-            raise HTTPException(422, "OCR could not find readable text in this PDF")
+            progress_id = str(uuid.UUID(progress_id))
+        except ValueError:
+            raise HTTPException(400, "Invalid upload ID")
+        with LOCK:
+            now = time.monotonic()
+            for old_id, state in list(UPLOAD_PROGRESS.items()):
+                if now - state["updated"] > 600:
+                    del UPLOAD_PROGRESS[old_id]
+            UPLOAD_PROGRESS[progress_id] = {"phase": "preparing", "done": 0, "total": 0, "updated": now}
+
+    def report(phase: str, done: int, total: int):
+        if progress_id:
+            with LOCK:
+                UPLOAD_PROGRESS[progress_id] = {"phase": phase, "done": done, "total": total, "updated": time.monotonic()}
+
+    pages, ocr_used = await run_in_threadpool(parse_pdf_pages, content, report)
     with LOCK:
         path = subject_dir(subject_id)
         if any(item["name"].casefold() == name.casefold() for item in files(path)):

@@ -1267,7 +1267,6 @@ button:disabled {
 .upload-result { flex-wrap: wrap; }
 .upload-book-state { display: grid; justify-items: center; gap: 9px; color: #6550a5; }
 .upload-book-state .book-loader { transform: scale(1.7); margin: 12px 0 16px; }
-.upload-book-state > span { font-family: "Bricolage Grotesque Variable", serif; font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .chat-name-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 18px; background: #21193699; }
 .chat-name-dialog { display: grid; gap: 12px; width: min(400px, 100%); padding: 24px; background: white; border-radius: 16px; box-shadow: 0 22px 60px #21193640; }
 .chat-name-dialog h2 { margin: 0 0 4px; font-family: "Bricolage Grotesque Variable", serif; }
@@ -1488,15 +1487,6 @@ button:disabled {
 .thinking-copy small {
   color: #9186a1;
   font-size: 10px;
-}
-.thinking-percent {
-  margin-left: auto;
-  min-width: 42px;
-  color: #6040b7;
-  font-family: "Bricolage Grotesque Variable", serif;
-  font-size: 18px;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
 }
 @keyframes book-flip {
   0%, 12% { transform: rotateY(0deg); opacity: 1; }
@@ -2115,4 +2105,55 @@ button:disabled {
 }
 .message-text strong {
   font-weight: 850;
+}
+
+/* Keep the conversation dominant; PDFs are a compact source shelf. */
+.study-heading { min-height: 88px; padding-bottom: 14px; }
+.study-heading h1 { font-size: clamp(30px, 3vw, 40px); }
+.study-heading p, .study-heading-spark, .heading-illustration { display: none; }
+.study-columns { grid-template-columns: minmax(0, 1fr) minmax(200px, 238px); gap: 14px; }
+.chat-upload { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; padding: 8px 10px; color: #6545bb; background: #f1ebff; border: 0; border-radius: 8px; font: inherit; font-size: 11px; font-weight: 800; white-space: nowrap; }
+.chat-upload:hover:not(:disabled) { background: #e5d9ff; }
+.chat-upload:disabled { opacity: .5; }
+.chat-status { margin-left: 0; }
+.chat-upload-progress { display: flex; align-items: center; gap: 12px; padding: 8px 18px; background: #f5f0ff; color: #5c42a6; border-bottom: 1px solid #e8ddfa; }
+.chat-upload-progress .book-loader { transform: scale(.75); margin: -6px; }
+.chat-upload-progress > div:last-child { display: grid; gap: 2px; min-width: 0; }
+.chat-upload-progress strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.chat-upload-progress span { font-size: 11px; }
+.sources-panel { padding: 16px; }
+.panel-heading h2 { font-size: 18px; }
+.dropzone {
+  min-height: 82px;
+  margin: 16px 0 13px;
+  padding: 12px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-width: 1px;
+  text-align: left;
+}
+.drop-icon { margin: 0; }
+.dropzone > span { margin: 0; font-size: 12px; }
+.dropzone .upload-button { margin: 0 0 0 auto; padding: 8px 10px; white-space: nowrap; }
+.upload-book-state { display: flex; align-items: center; justify-content: center; width: 100%; gap: 12px; text-align: left; }
+.upload-book-state .book-loader { transform: none; margin: 0; }
+.upload-book-state > div:last-child { display: grid; gap: 2px; min-width: 0; }
+.upload-book-state strong { font-size: 12px; overflow-wrap: anywhere; }
+.upload-book-state small { color: #827693; font-size: 10px; }
+.upload-result { align-items: flex-start; }
+.upload-result small { max-width: 100%; text-align: left; }
+.chat-panel { min-height: 0; }
+@media (max-width: 850px) {
+  .study-heading { min-height: 56px; padding-bottom: 10px; }
+  .study-columns { gap: 10px; }
+  .sources-panel { padding: 12px 14px; }
+  .sources-panel .panel-heading { display: flex; align-items: center; }
+  .sources-panel .panel-heading p { display: none; }
+  .dropzone { margin: 8px 0; min-height: 54px; }
+  .file-section-title { margin-top: 8px; }
+  .pdf-list { max-height: 126px; overflow-y: auto; }
+  .chat-panel { height: calc(100dvh - 150px); min-height: 470px; max-height: 760px; flex: none; }
+  .chat-upload { padding: 7px; font-size: 0; }
+  .chat-upload svg { width: 18px; height: 18px; }
 }

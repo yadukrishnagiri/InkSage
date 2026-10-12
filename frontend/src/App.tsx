@@ -46,7 +46,11 @@ type UploadState = {
   status: "uploading" | "done" | "error";
   detail?: string;
   progress?: number;
+  phase?: "transferring" | "preparing" | "extracting" | "ocr";
+  done?: number;
+  total?: number;
 };
+type UploadProgress = Pick<UploadState, "progress" | "phase" | "done" | "total">;
 type PreviewState = { file: Pdf; page: number; excerpt: string } | null;
 const tones = ["coral", "violet", "lime", "sky", "yellow"];
 
@@ -54,24 +58,49 @@ function makeThread(title = "New chat"): ChatThread {
   return { id: crypto.randomUUID(), title, createdAt: new Date().toISOString() };
 }
 
-function uploadPdf(subjectId: string, file: File, onProgress: (value: number) => void): Promise<void> {
+function uploadPdf(subjectId: string, file: File, onProgress: (value: UploadProgress) => void): Promise<void> {
   return new Promise((resolve, reject) => {
+    const progressId = crypto.randomUUID();
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", `/api/subjects/${subjectId}/files`);
+    let poll: number | undefined;
+    let finished = false;
+    const stopPolling = () => { if (poll !== undefined) window.clearInterval(poll); };
+    xhr.open("POST", `/api/subjects/${subjectId}/files?progress_id=${progressId}`);
     xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) onProgress(Math.min(90, Math.round((event.loaded / event.total) * 90)));
+      if (event.lengthComputable) onProgress({ phase: "transferring", progress: Math.round((event.loaded / event.total) * 100) });
+    };
+    xhr.upload.onloadend = () => {
+      if (finished) return;
+      onProgress({ phase: "preparing" });
+      poll = window.setInterval(async () => {
+        try {
+          const response = await fetch(`/api/uploads/${progressId}/progress`);
+          if (!response.ok) return;
+          const state = await response.json() as { phase: "preparing" | "extracting" | "ocr"; done: number; total: number };
+          if (!finished) onProgress({ phase: state.phase, done: state.done, total: state.total, progress: state.total ? Math.round(state.done / state.total * 100) : undefined });
+        } catch { /* The upload request reports connection errors. */ }
+      }, 300);
     };
     xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) { onProgress(100); resolve(); return; }
+      finished = true;
+      stopPolling();
+      if (xhr.status >= 200 && xhr.status < 300) { resolve(); return; }
       let detail = `Upload failed (${xhr.status})`;
       try { detail = JSON.parse(xhr.responseText).detail || detail; } catch { /* Keep status text. */ }
       reject(new Error(detail));
     };
-    xhr.onerror = () => reject(new Error("Connection lost while uploading the PDF"));
+    xhr.onerror = () => { finished = true; stopPolling(); reject(new Error("Connection lost while uploading the PDF")); };
     const body = new FormData();
     body.append("file", file);
     xhr.send(body);
   });
+}
+
+function uploadProgressLabel(item: UploadState) {
+  if (item.phase === "transferring") return `Sending file · ${item.progress ?? 0}%`;
+  if (item.phase === "extracting") return `Reading text · ${item.done ?? 0}/${item.total ?? 0} pages · ${item.progress ?? 0}%`;
+  if (item.phase === "ocr") return `Scanning pages · ${item.done ?? 0}/${item.total ?? 0} pages · ${item.progress ?? 0}%`;
+  return "Preparing PDF…";
 }
 
 function answerText(text: string) {
@@ -465,7 +494,6 @@ export default function App() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [answering, setAnswering] = useState(false);
-  const [answerProgress, setAnswerProgress] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -489,6 +517,7 @@ export default function App() {
     : null;
   const chat = activeThreadId ? messages[activeThreadId] || [] : [];
   const question = activeThreadId ? drafts[activeThreadId] || "" : "";
+  const currentUpload = uploads.find((item) => item.status === "uploading");
 
   async function refresh() {
     const next = await request<Subject[]>("/api/subjects");
@@ -544,18 +573,6 @@ export default function App() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat.length, busy]);
-  useEffect(() => {
-    if (!answering) return;
-    setAnswerProgress(7);
-    const timer = window.setInterval(() => {
-      setAnswerProgress((current) => {
-        if (current >= 94) return current;
-        const step = current < 45 ? 7 : current < 75 ? 4 : 2;
-        return Math.min(94, current + step);
-      });
-    }, 220);
-    return () => window.clearInterval(timer);
-  }, [answering]);
   useEffect(() => {
     if (menuOpen) {
       sidebarCloseRef.current?.focus();
@@ -683,14 +700,14 @@ export default function App() {
     for (const [id, file] of selected.entries()) {
       setUploads((previous) => [
         ...previous,
-        { id, name: file.name, status: "uploading", progress: 0 },
+        { id, name: file.name, status: "uploading", phase: "transferring", progress: 0 },
       ]);
       try {
         if (!file.name.toLowerCase().endsWith(".pdf"))
           throw new Error("Choose a PDF file.");
         await uploadPdf(activeId, file, (progress) => {
           setUploads((previous) => previous.map((item) =>
-            item.id === id ? { ...item, progress } : item,
+            item.id === id ? { ...item, ...progress } : item,
           ));
         });
         setUploads((previous) =>
@@ -763,8 +780,6 @@ export default function App() {
           { role: "assistant", ...answer },
         ],
       }));
-      setAnswerProgress(100);
-      await new Promise((resolve) => window.setTimeout(resolve, 220));
     } catch (e) {
       setMessages((previous) => ({
         ...previous,
@@ -945,129 +960,6 @@ export default function App() {
                   </div>
                   <div className="study-columns">
                     <section
-                      className="sources-panel"
-                      aria-labelledby="sources-title"
-                    >
-                      <div className="panel-heading">
-                        <div>
-                          <h2 id="sources-title">
-                            Your PDFs <span>{active.files.length}</span>
-                          </h2>
-                          <p>Only these files are used for this subject.</p>
-                        </div>
-                      </div>
-                      <div
-                        className={`dropzone ${dragging ? "dragging" : ""}`}
-                        onDragOver={(event) => {
-                          event.preventDefault();
-                          setDragging(true);
-                        }}
-                        onDragLeave={(event) => {
-                          if (
-                            !event.currentTarget.contains(
-                              event.relatedTarget as Node,
-                            )
-                          )
-                            setDragging(false);
-                        }}
-                        onDrop={onDrop}
-                      >
-                        {uploads.some((item) => item.status === "uploading") ? (
-                          <div className="upload-book-state" role="status">
-                            <div className="book-loader" aria-hidden="true">
-                              <span className="book-half book-left" /><span className="book-half book-right" />
-                              <span className="book-turning-page page-one" /><span className="book-turning-page page-two" /><span className="book-turning-page page-three" /><span className="book-spine" />
-                            </div>
-                            <strong>{uploads.find((item) => item.status === "uploading")?.progress === 90 ? "Reading PDF pages…" : "Uploading PDF…"}</strong>
-                            <span>{uploads.find((item) => item.status === "uploading")?.progress || 0}%</span>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="drop-icon"><Upload size={27} /></div>
-                            <strong>Drop your PDFs here</strong>
-                            <span>or choose files from your computer</span>
-                            <button className="button-solid upload-button" onClick={() => uploadRef.current?.click()} disabled={busy}>
-                              <Plus size={17} /> Add PDFs
-                            </button>
-                            <small>PDFs up to 20 MB · scanned pages supported</small>
-                          </>
-                        )}
-                        <input
-                          ref={uploadRef}
-                          type="file"
-                          accept=".pdf,application/pdf"
-                          multiple
-                          hidden
-                          onChange={(event) => {
-                            if (event.target.files) upload(event.target.files);
-                          }}
-                        />
-                      </div>
-                      {uploads.length > 0 && (
-                        <div className="upload-results" aria-live="polite">
-                          {uploads.map((item, index) => (
-                            <div
-                              className={`upload-result ${item.status}`}
-                              key={`${item.name}-${index}`}
-                            >
-                              <FileText size={16} />
-                              <span title={item.name}>{item.name}</span>
-                              <small>
-                                {item.status === "uploading"
-                                  ? `${item.progress || 0}% · ${item.progress === 90 ? "Reading pages…" : "Uploading…"}`
-                                  : item.status === "done"
-                                    ? "Added"
-                                    : item.detail}
-                              </small>
-                              {item.status === "uploading" && (
-                                <div className="upload-progress" role="progressbar" aria-label={`Uploading ${item.name}`} aria-valuenow={item.progress || 0} aria-valuemin={0} aria-valuemax={100}>
-                                  <span style={{ width: `${item.progress || 0}%` }} />
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      <div className="file-section-title">IN THIS SUBJECT</div>
-                      {active.files.length ? (
-                        <div className="pdf-list">
-                          {active.files.map((file) => (
-                            <div className="pdf-row" key={file.id}>
-                              <div className="pdf-symbol">
-                                <FileText size={20} />
-                              </div>
-                              <div className="pdf-info">
-                                <strong title={file.name}>{file.name}</strong>
-                                <small>
-                                  {file.pages}{" "}
-                                  {file.pages === 1 ? "page" : "pages"} ·{" "}
-                                  {(file.size / 1024 / 1024).toFixed(1)} MB
-                                </small>
-                              </div>
-                              <button
-                                onClick={() =>
-                                  setDialog({
-                                    kind: "deletePdf",
-                                    file,
-                                    subjectId: active.id,
-                                  })
-                                }
-                                title={`Remove ${file.name}`}
-                                aria-label={`Remove ${file.name}`}
-                              >
-                                <Trash2 size={17} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="files-empty">
-                          Your PDF shelf is empty. Add a file to start asking
-                          questions.
-                        </p>
-                      )}
-                    </section>
-                    <section
                       className="chat-panel"
                       aria-labelledby="chat-title"
                     >
@@ -1079,6 +971,9 @@ export default function App() {
                           <h2 id="chat-title">Ask InkSage</h2>
                           <p>Studying {active.name}</p>
                         </div>
+                        <button type="button" className="chat-upload" onClick={() => uploadRef.current?.click()} disabled={busy}>
+                          <Plus size={15} /> Add PDF
+                        </button>
                         <span className="chat-status">
                           <span />{" "}
                           {busy
@@ -1088,6 +983,15 @@ export default function App() {
                               : "Add a PDF"}
                         </span>
                       </div>
+                      {currentUpload && (
+                        <div className="chat-upload-progress" role="status">
+                          <div className="book-loader" aria-hidden="true">
+                            <span className="book-half book-left" /><span className="book-half book-right" />
+                            <span className="book-turning-page page-one" /><span className="book-turning-page page-two" /><span className="book-turning-page page-three" /><span className="book-spine" />
+                          </div>
+                          <div><strong title={currentUpload.name}>{currentUpload.name}</strong><span>{uploadProgressLabel(currentUpload)}</span></div>
+                        </div>
+                      )}
                       <div className="thread-bar">
                         <label className="chat-search">
                           <Search size={15} />
@@ -1196,7 +1100,6 @@ export default function App() {
                               <strong>Finding it in your notes…</strong>
                               <small>Reading the right pages</small>
                             </div>
-                            <strong className="thinking-percent">{answerProgress}%</strong>
                           </div>
                         )}
                         <div ref={bottomRef} />
@@ -1239,6 +1142,129 @@ export default function App() {
                           Answers can make mistakes. Check the cited PDF pages.
                         </small>
                       </div>
+                    </section>
+                    <section
+                      className="sources-panel"
+                      aria-labelledby="sources-title"
+                    >
+                      <div className="panel-heading">
+                        <div>
+                          <h2 id="sources-title">
+                            Your PDFs <span>{active.files.length}</span>
+                          </h2>
+                          <p>Sources for this chat</p>
+                        </div>
+                      </div>
+                      <div
+                        className={`dropzone ${dragging ? "dragging" : ""}`}
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          setDragging(true);
+                        }}
+                        onDragLeave={(event) => {
+                          if (
+                            !event.currentTarget.contains(
+                              event.relatedTarget as Node,
+                            )
+                          )
+                            setDragging(false);
+                        }}
+                        onDrop={onDrop}
+                      >
+                        {currentUpload ? (
+                          <div className="upload-book-state" role="status">
+                            <div className="book-loader" aria-hidden="true">
+                              <span className="book-half book-left" /><span className="book-half book-right" />
+                              <span className="book-turning-page page-one" /><span className="book-turning-page page-two" /><span className="book-turning-page page-three" /><span className="book-spine" />
+                            </div>
+                            <div>
+                              <strong>{uploadProgressLabel(currentUpload)}</strong>
+                              <small>The percentage is for the current step.</small>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="drop-icon"><Upload size={20} /></div>
+                            <span>Drop PDFs here</span>
+                            <button className="button-solid upload-button" onClick={() => uploadRef.current?.click()} disabled={busy}>
+                              <Plus size={17} /> Add PDFs
+                            </button>
+                          </>
+                        )}
+                        <input
+                          ref={uploadRef}
+                          type="file"
+                          accept=".pdf,application/pdf"
+                          multiple
+                          hidden
+                          onChange={(event) => {
+                            if (event.target.files) upload(event.target.files);
+                          }}
+                        />
+                      </div>
+                      {uploads.length > 0 && (
+                        <div className="upload-results" aria-live="polite">
+                          {uploads.map((item, index) => (
+                            <div
+                              className={`upload-result ${item.status}`}
+                              key={`${item.name}-${index}`}
+                            >
+                              <FileText size={16} />
+                              <span title={item.name}>{item.name}</span>
+                              <small>
+                                {item.status === "uploading"
+                                  ? uploadProgressLabel(item)
+                                  : item.status === "done"
+                                    ? "Added"
+                                    : item.detail}
+                              </small>
+                              {item.status === "uploading" && item.progress !== undefined && item.phase !== "preparing" && (
+                                <div className="upload-progress" role="progressbar" aria-label={`${item.phase === "transferring" ? "Sending" : "Reading"} ${item.name}`} aria-valuenow={item.progress} aria-valuemin={0} aria-valuemax={100}>
+                                  <span style={{ width: `${item.progress}%` }} />
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="file-section-title">IN THIS SUBJECT</div>
+                      {active.files.length ? (
+                        <div className="pdf-list">
+                          {active.files.map((file) => (
+                            <div className="pdf-row" key={file.id}>
+                              <div className="pdf-symbol">
+                                <FileText size={20} />
+                              </div>
+                              <div className="pdf-info">
+                                <strong title={file.name}>{file.name}</strong>
+                                <small>
+                                  {file.pages}{" "}
+                                  {file.pages === 1 ? "page" : "pages"} ·{" "}
+                                  {(file.size / 1024 / 1024).toFixed(1)} MB
+                                </small>
+                              </div>
+                              <button
+                                onClick={() =>
+                                  setDialog({
+                                    kind: "deletePdf",
+                                    file,
+                                    subjectId: active.id,
+                                  })
+                                }
+                                title={`Remove ${file.name}`}
+                                aria-label={`Remove ${file.name}`}
+                              >
+                                <Trash2 size={17} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="files-empty">
+                          Your PDF shelf is empty. Add a file to start asking
+                          questions.
+                        </p>
+                      )}
                     </section>
                   </div>
                 </div>
