@@ -281,6 +281,7 @@ def query(value: QueryInput):
     with LOCK:
         path = subject_dir(value.subject_id)
         terms = set(re.findall(r"[a-z0-9]{3,}", value.query.casefold())) - {"the", "and", "for", "what", "how", "why", "where", "when", "does", "from", "with", "about", "this", "that", "are", "can", "you", "explain"}
+        summary_request = bool(re.search(r"\b(summar(?:y|ize|ise)|summery|overview|main points|key points)\b", value.query, re.I))
         matches = []
         for info in files(path):
             for page in read(path / f"{info['id']}.pages"):
@@ -288,9 +289,16 @@ def query(value: QueryInput):
                 for start in range(0, len(text), 900):
                     chunk = text[start:start + 1100]
                     score = len(terms & set(re.findall(r"[a-z0-9]{3,}", chunk.casefold())))
-                    if score:
+                    if score or summary_request:
                         matches.append((score, info["name"], page["page"], chunk))
-    matches.sort(key=lambda item: item[0], reverse=True)
+    if summary_request:
+        matches.sort(key=lambda item: (-item[0], item[2]))
+        if matches and not any(item[0] for item in matches):
+            # Spread a general summary across the document, rather than repeating its first page.
+            stride = max(1, len(matches) // 5)
+            matches = matches[::stride]
+    else:
+        matches.sort(key=lambda item: item[0], reverse=True)
     matches = matches[:5]
     if not matches:
         return {"text": "I couldn't find that in this subject's PDFs. Try a more specific term.", "citations": [], "mode": "search"}

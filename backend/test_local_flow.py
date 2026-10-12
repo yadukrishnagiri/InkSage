@@ -36,6 +36,10 @@ def test_subject_pdf_chat_lifecycle():
         assert "eleven" in answer["text"]
         assert answer["citations"][0]["label"] == "atoms.pdf, page 1"
         assert "eleven" in answer["citations"][0]["excerpt"]
+        summary = client.post("/api/chat/query", json={"subject_id": chemistry["id"], "query": "What is the summary of the PDF?"}).json()
+        assert summary["citations"], summary
+        misspelled_summary = client.post("/api/chat/query", json={"subject_id": chemistry["id"], "query": "what is the summery of the pdf"}).json()
+        assert misspelled_summary["citations"], misspelled_summary
         other = client.post("/api/chat/query", json={"subject_id": maths["id"], "query": "What is the atomic number of sodium?"}).json()
         assert not other["citations"]
 

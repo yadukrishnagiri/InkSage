@@ -14,6 +14,7 @@ import {
   MessageCircle,
   MessagesSquare,
   Plus,
+  Search,
   Send,
   Sparkles,
   Trash2,
@@ -44,12 +45,33 @@ type UploadState = {
   name: string;
   status: "uploading" | "done" | "error";
   detail?: string;
+  progress?: number;
 };
 type PreviewState = { file: Pdf; page: number; excerpt: string } | null;
 const tones = ["coral", "violet", "lime", "sky", "yellow"];
 
 function makeThread(title = "New chat"): ChatThread {
   return { id: crypto.randomUUID(), title, createdAt: new Date().toISOString() };
+}
+
+function uploadPdf(subjectId: string, file: File, onProgress: (value: number) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api/subjects/${subjectId}/files`);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(Math.min(90, Math.round((event.loaded / event.total) * 90)));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) { onProgress(100); resolve(); return; }
+      let detail = `Upload failed (${xhr.status})`;
+      try { detail = JSON.parse(xhr.responseText).detail || detail; } catch { /* Keep status text. */ }
+      reject(new Error(detail));
+    };
+    xhr.onerror = () => reject(new Error("Connection lost while uploading the PDF"));
+    const body = new FormData();
+    body.append("file", file);
+    xhr.send(body);
+  });
 }
 
 function answerText(text: string) {
@@ -450,6 +472,9 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [uploads, setUploads] = useState<UploadState[]>([]);
+  const [chatNameMode, setChatNameMode] = useState<"new" | "rename" | null>(null);
+  const [chatName, setChatName] = useState("");
+  const [chatSearch, setChatSearch] = useState("");
   const [dialogWorking, setDialogWorking] = useState(false);
   const [preview, setPreview] = useState<PreviewState>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -569,15 +594,26 @@ export default function App() {
     const file = active.files.find((item) => item.name === citation.file);
     if (file) setPreview({ file, page: citation.page, excerpt: citation.excerpt });
   }
-  function createChat() {
+  function createChat(name: string) {
     if (!activeId) return;
-    const thread = makeThread();
+    const thread = makeThread(name);
     setThreads((previous) => ({
       ...previous,
       [activeId]: [thread, ...(previous[activeId] || [])],
     }));
     setActiveThreads((previous) => ({ ...previous, [activeId]: thread.id }));
     setError("");
+  }
+  function saveChatName() {
+    const name = chatName.trim();
+    if (!name || name.length > 80 || !activeId) return;
+    if (chatNameMode === "new") createChat(name);
+    if (chatNameMode === "rename" && activeThreadId) {
+      setThreads((previous) => ({ ...previous, [activeId]: (previous[activeId] || []).map((thread) =>
+        thread.id === activeThreadId ? { ...thread, title: name } : thread,
+      ) }));
+    }
+    setChatNameMode(null);
   }
   async function createSubject(name: string) {
     setDialogWorking(true);
@@ -647,16 +683,15 @@ export default function App() {
     for (const [id, file] of selected.entries()) {
       setUploads((previous) => [
         ...previous,
-        { id, name: file.name, status: "uploading" },
+        { id, name: file.name, status: "uploading", progress: 0 },
       ]);
       try {
         if (!file.name.toLowerCase().endsWith(".pdf"))
           throw new Error("Choose a PDF file.");
-        const body = new FormData();
-        body.append("file", file);
-        await request(`/api/subjects/${activeId}/files`, {
-          method: "POST",
-          body,
+        await uploadPdf(activeId, file, (progress) => {
+          setUploads((previous) => previous.map((item) =>
+            item.id === id ? { ...item, progress } : item,
+          ));
         });
         setUploads((previous) =>
           previous.map((item) =>
@@ -697,7 +732,7 @@ export default function App() {
     setError("");
     setBusy(true);
     setAnswering(true);
-    if (!(messages[threadId] || []).length) {
+    if (!(messages[threadId] || []).length && threads[subjectId]?.find((thread) => thread.id === threadId)?.title === "New chat") {
       setThreads((previous) => ({
         ...previous,
         [subjectId]: (previous[subjectId] || []).map((thread) =>
@@ -937,19 +972,26 @@ export default function App() {
                         }}
                         onDrop={onDrop}
                       >
-                        <div className="drop-icon">
-                          <Upload size={27} />
-                        </div>
-                        <strong>Drop your PDFs here</strong>
-                        <span>or choose files from your computer</span>
-                        <button
-                          className="button-solid upload-button"
-                          onClick={() => uploadRef.current?.click()}
-                          disabled={busy}
-                        >
-                          <Plus size={17} /> Add PDFs
-                        </button>
-                        <small>PDFs up to 20 MB · scanned pages supported</small>
+                        {uploads.some((item) => item.status === "uploading") ? (
+                          <div className="upload-book-state" role="status">
+                            <div className="book-loader" aria-hidden="true">
+                              <span className="book-half book-left" /><span className="book-half book-right" />
+                              <span className="book-turning-page page-one" /><span className="book-turning-page page-two" /><span className="book-turning-page page-three" /><span className="book-spine" />
+                            </div>
+                            <strong>{uploads.find((item) => item.status === "uploading")?.progress === 90 ? "Reading PDF pages…" : "Uploading PDF…"}</strong>
+                            <span>{uploads.find((item) => item.status === "uploading")?.progress || 0}%</span>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="drop-icon"><Upload size={27} /></div>
+                            <strong>Drop your PDFs here</strong>
+                            <span>or choose files from your computer</span>
+                            <button className="button-solid upload-button" onClick={() => uploadRef.current?.click()} disabled={busy}>
+                              <Plus size={17} /> Add PDFs
+                            </button>
+                            <small>PDFs up to 20 MB · scanned pages supported</small>
+                          </>
+                        )}
                         <input
                           ref={uploadRef}
                           type="file"
@@ -972,11 +1014,16 @@ export default function App() {
                               <span title={item.name}>{item.name}</span>
                               <small>
                                 {item.status === "uploading"
-                                  ? "Adding…"
+                                  ? `${item.progress || 0}% · ${item.progress === 90 ? "Reading pages…" : "Uploading…"}`
                                   : item.status === "done"
                                     ? "Added"
                                     : item.detail}
                               </small>
+                              {item.status === "uploading" && (
+                                <div className="upload-progress" role="progressbar" aria-label={`Uploading ${item.name}`} aria-valuenow={item.progress || 0} aria-valuemin={0} aria-valuemax={100}>
+                                  <span style={{ width: `${item.progress || 0}%` }} />
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -1042,6 +1089,10 @@ export default function App() {
                         </span>
                       </div>
                       <div className="thread-bar">
+                        <label className="chat-search">
+                          <Search size={15} />
+                          <input value={chatSearch} onChange={(event) => setChatSearch(event.target.value)} placeholder="Search chats" aria-label="Search chats" />
+                        </label>
                         <label>
                           <MessagesSquare size={15} />
                           <span className="sr-only">Current chat</span>
@@ -1055,15 +1106,18 @@ export default function App() {
                             }
                             aria-label="Choose a chat"
                           >
-                            {(threads[active.id] || []).map((thread) => (
+                            {(threads[active.id] || []).filter((thread) => !chatSearch || thread.id === activeThreadId || thread.title.toLowerCase().includes(chatSearch.toLowerCase()) || (messages[thread.id] || []).some((message) => message.text.toLowerCase().includes(chatSearch.toLowerCase()))).map((thread) => (
                               <option key={thread.id} value={thread.id}>
                                 {thread.title}
                               </option>
                             ))}
                           </select>
                         </label>
-                        <button type="button" onClick={createChat} disabled={busy}>
+                        <button type="button" onClick={() => { setChatName(""); setChatNameMode("new"); }} disabled={busy}>
                           <Plus size={15} /> New chat
+                        </button>
+                        <button type="button" className="rename-chat" onClick={() => { setChatName(threads[active.id]?.find((thread) => thread.id === activeThreadId)?.title || ""); setChatNameMode("rename"); }} disabled={busy || !activeThreadId}>
+                          Rename
                         </button>
                       </div>
                       <div
@@ -1200,6 +1254,19 @@ export default function App() {
         onDelete={deleteSelected}
         working={dialogWorking}
       />
+      {chatNameMode && (
+        <div className="chat-name-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setChatNameMode(null); }}>
+          <form className="chat-name-dialog" role="dialog" aria-modal="true" aria-labelledby="chat-name-title" onSubmit={(event) => { event.preventDefault(); saveChatName(); }} onKeyDown={(event) => { if (event.key === "Escape") setChatNameMode(null); }}>
+            <h2 id="chat-name-title">{chatNameMode === "new" ? "Name your new chat" : "Rename chat"}</h2>
+            <label htmlFor="chat-name-input">Chat name</label>
+            <input id="chat-name-input" autoFocus maxLength={80} value={chatName} onChange={(event) => setChatName(event.target.value)} placeholder="e.g. Chapter 1 revision" />
+            <div className="dialog-actions">
+              <button type="button" className="button-quiet" onClick={() => setChatNameMode(null)}>Cancel</button>
+              <button type="submit" className="button-solid" disabled={!chatName.trim()}>{chatNameMode === "new" ? "Create chat" : "Save name"}</button>
+            </div>
+          </form>
+        </div>
+      )}
       {preview && active && (
         <div className="pdf-preview-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setPreview(null);
