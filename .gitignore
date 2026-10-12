@@ -128,3 +128,10 @@ test_results/
 ehthumbs.db
 Thumbs.db
 Desktop.ini
+
+# Generated portfolio demo media and temporary render files
+portfolio_demo/*.mp4
+portfolio_demo/*.jpg
+portfolio_demo/*.jpeg
+portfolio_demo/*.png
+video_edit_work/

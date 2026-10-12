@@ -1,8 +1,8 @@
 # InkSage
 
-InkSage is a local study workspace. Create a subject such as Chemistry or Maths, upload its text based PDFs, select that subject, and ask questions grounded in only those PDFs. Answers show PDF and page references.
+InkSage is a local study workspace. Create a subject such as Chemistry or Maths, upload its PDFs, select that subject, and ask questions grounded in only those PDFs. Answers show PDF and page references; selecting a reference opens the cited page with the supporting passage highlighted when it can be matched.
 
-This version has **no login and no database**. Subject metadata, uploaded PDFs, and extracted page text are stored under `local_data/` (ignored by Git). Chat history is kept in the current browser's local storage. Nothing is automatically deleted when a tab closes.
+This version has **no login and no database**. Subject metadata, uploaded PDFs, and extracted page text are stored under `local_data/` (ignored by Git). Multiple named chats can be created and searched within each subject; their history is kept in the current browser's local storage. Nothing is automatically deleted when a tab closes.
 
 ## Run locally
 
@@ -29,8 +29,19 @@ For generated AI answers, put `GROQ_API_KEY=...` in `backend/.env`. Optionally s
 
 ## Scope and limits
 
-- PDF only, up to 20 MB and 300 pages per file. PDFs need selectable text; scanned pages need OCR before upload.
+- PDF only, up to 20 MB and 300 pages per file. PDFs with embedded text are read directly. Image-only pages use local OCR when [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) is installed; without it, those uploads fail with an installation message. OCR accuracy depends on scan quality.
+- Upload progress reports the current transfer, text extraction, or OCR step using measured bytes or completed pages. The percentage resets for each step.
 - Retrieval uses local keyword overlap. It is intentionally lightweight for local testing and may miss semantic matches or synonyms.
 - The server binds to `127.0.0.1`; local files are not protected by accounts. Do not expose this API to a network.
 - Deleting a subject deletes its PDFs and extracted text. Deleting a PDF deletes its extracted text too.
 - The old Supabase and ChromaDB modules remain in the repository for reference but are not loaded by the active app. Existing `uploads/`, `chroma_db/`, and remote Supabase data were not deleted or migrated.
+
+## Portfolio demo edit
+
+The optional `portfolio_demo/build_demo.py` script cuts a screen recording into a silent, 25-second, full-frame walkthrough with explanatory pop-ups. Install its separate editing dependencies with `python -m pip install Pillow imageio-ffmpeg`, then run:
+
+```powershell
+python portfolio_demo/build_demo.py "C:\path\to\your\recording.mp4"
+```
+
+The cut points in `SHOTS` were selected for the original InkSage recording, so adjust them for another recording. Generated videos, poster images, and temporary render files are ignored by Git; the source recording is not included in this repository.
