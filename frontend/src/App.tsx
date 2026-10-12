@@ -40,6 +40,7 @@ type UploadState = {
   status: "uploading" | "done" | "error";
   detail?: string;
 };
+type PreviewState = { file: Pdf; page: number } | null;
 const tones = ["coral", "violet", "lime", "sky", "yellow"];
 
 function answerText(text: string) {
@@ -437,6 +438,7 @@ export default function App() {
   const [dialog, setDialog] = useState<DialogState>(null);
   const [uploads, setUploads] = useState<UploadState[]>([]);
   const [dialogWorking, setDialogWorking] = useState(false);
+  const [preview, setPreview] = useState<PreviewState>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const uploadInFlight = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -497,6 +499,12 @@ export default function App() {
     setView("landing");
     setMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "instant" });
+  }
+  function openCitation(citation: string) {
+    const match = citation.match(/^(.*), page (\d+)$/i);
+    if (!match || !active) return;
+    const file = active.files.find((item) => item.name === match[1]);
+    if (file) setPreview({ file, page: Number(match[2]) });
   }
   async function createSubject(name: string) {
     setDialogWorking(true);
@@ -978,10 +986,15 @@ export default function App() {
                                 <div className="citations">
                                   {message.citations.map(
                                     (citation, citationIndex) => (
-                                      <span key={citationIndex}>
+                                      <button
+                                        key={citationIndex}
+                                        type="button"
+                                        onClick={() => openCitation(citation)}
+                                        title="Open this page in the PDF"
+                                      >
                                         <FileText size={13} />
                                         {citation}
-                                      </span>
+                                      </button>
                                     ),
                                   )}
                                 </div>
@@ -991,10 +1004,14 @@ export default function App() {
                         ))}
                         {busy && (
                           <div className="thinking">
-                            <span />
-                            <span />
-                            <span />
-                            <small>Finding it in your notes…</small>
+                            <div className="book-loader" aria-hidden="true">
+                              <span className="book-cover" />
+                              <span className="book-page" />
+                            </div>
+                            <div className="thinking-copy">
+                              <strong>Finding it in your notes…</strong>
+                              <small>Reading the right pages</small>
+                            </div>
                           </div>
                         )}
                         <div ref={bottomRef} />
@@ -1052,6 +1069,26 @@ export default function App() {
         onDelete={deleteSelected}
         working={dialogWorking}
       />
+      {preview && active && (
+        <div className="pdf-preview-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setPreview(null);
+        }}>
+          <section className="pdf-preview" role="dialog" aria-modal="true" aria-labelledby="preview-title">
+            <header>
+              <div>
+                <span className="preview-kicker"><FileText size={13} /> Citation preview</span>
+                <h2 id="preview-title">{preview.file.name}</h2>
+                <p>Page {preview.page} · cited in your answer</p>
+              </div>
+              <button className="dialog-close" onClick={() => setPreview(null)} aria-label="Close PDF preview"><X size={19} /></button>
+            </header>
+            <div className="pdf-frame-wrap">
+              <iframe title={`${preview.file.name}, page ${preview.page}`} src={`/api/subjects/${active.id}/files/${preview.file.id}/preview#page=${preview.page}`} />
+              <div className="page-highlight" aria-hidden="true">Cited page {preview.page}</div>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }

@@ -167,6 +167,20 @@ def delete_file(subject_id: str, file_id: str):
             (path / f"{file_id}{extension}").unlink(missing_ok=True)
     return {"ok": True}
 
+@app.get("/api/subjects/{subject_id}/files/{file_id}/preview")
+def preview_file(subject_id: str, file_id: str):
+    """Serve an uploaded PDF to the in-app citation preview."""
+    path = subject_dir(subject_id)
+    try:
+        file_id = str(uuid.UUID(file_id))
+    except ValueError:
+        raise HTTPException(400, "Invalid file ID")
+    pdf = path / f"{file_id}.pdf"
+    info_path = path / f"{file_id}.json"
+    if not pdf.is_file() or not info_path.is_file():
+        raise HTTPException(404, "PDF not found")
+    return FileResponse(pdf, media_type="application/pdf", filename=read(info_path)["name"])
+
 @app.post("/api/chat/query")
 def query(value: QueryInput):
     with LOCK:
