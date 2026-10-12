@@ -431,6 +431,8 @@ export default function App() {
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [answering, setAnswering] = useState(false);
+  const [answerProgress, setAnswerProgress] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -474,6 +476,18 @@ export default function App() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat.length, busy]);
+  useEffect(() => {
+    if (!answering) return;
+    setAnswerProgress(7);
+    const timer = window.setInterval(() => {
+      setAnswerProgress((current) => {
+        if (current >= 94) return current;
+        const step = current < 45 ? 7 : current < 75 ? 4 : 2;
+        return Math.min(94, current + step);
+      });
+    }, 220);
+    return () => window.clearInterval(timer);
+  }, [answering]);
   useEffect(() => {
     if (menuOpen) {
       sidebarCloseRef.current?.focus();
@@ -611,6 +625,7 @@ export default function App() {
     setDrafts((previous) => ({ ...previous, [subjectId]: "" }));
     setError("");
     setBusy(true);
+    setAnswering(true);
     setMessages((previous) => ({
       ...previous,
       [subjectId]: [...(previous[subjectId] || []), { role: "user", text }],
@@ -632,6 +647,8 @@ export default function App() {
           { role: "assistant", ...answer },
         ],
       }));
+      setAnswerProgress(100);
+      await new Promise((resolve) => window.setTimeout(resolve, 220));
     } catch (e) {
       setMessages((previous) => ({
         ...previous,
@@ -640,6 +657,7 @@ export default function App() {
       setDrafts((previous) => ({ ...previous, [subjectId]: text }));
       setError((e as Error).message);
     } finally {
+      setAnswering(false);
       setBusy(false);
     }
   }
@@ -1002,15 +1020,17 @@ export default function App() {
                             </div>
                           </div>
                         ))}
-                        {busy && (
+                        {answering && (
                           <div className="thinking">
                             <div className="book-loader" aria-hidden="true">
-                              <span className="book-cover" />
-                              <span className="book-page" />
+                              <span className="book-half book-left" />
+                              <span className="book-half book-right" />
+                              <span className="book-turning-page" />
+                              <span className="book-spine" />
                             </div>
                             <div className="thinking-copy">
                               <strong>Finding it in your notes…</strong>
-                              <small>Reading the right pages</small>
+                              <small>Reading the right pages · {answerProgress}%</small>
                             </div>
                           </div>
                         )}

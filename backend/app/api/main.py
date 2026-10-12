@@ -179,7 +179,11 @@ def preview_file(subject_id: str, file_id: str):
     info_path = path / f"{file_id}.json"
     if not pdf.is_file() or not info_path.is_file():
         raise HTTPException(404, "PDF not found")
-    return FileResponse(pdf, media_type="application/pdf", filename=read(info_path)["name"])
+    return FileResponse(
+        pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline"},
+    )
 
 @app.post("/api/chat/query")
 def query(value: QueryInput):
